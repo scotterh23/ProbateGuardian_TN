@@ -1058,8 +1058,7 @@ with st.sidebar:
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown('<p class="hero-title">🏠 ProbateGuardian Free TN</p>', unsafe_allow_html=True)
 st.markdown(
-    '<p class="hero-sub">24/7 Partnership CRM for Scott + Branton — probate compassion, pipeline clarity, '
-    "and scalable volume across Wilson, Davidson, Rutherford & beyond.</p>",
+    '<p class="hero-sub">24/7 Partnership CRM for Scott Hardesty + Branton Walker</p>',
     unsafe_allow_html=True,
 )
 
@@ -1283,30 +1282,34 @@ with tab3:
         "all have online/paid digital access so no courthouse runs needed."
     )
 
-    with st.expander("🚀 Deploy to Streamlit Cloud — Permanent Link for Branton", expanded=False):
+    st.markdown("### 🌐 Live App — 24/7 Access")
+    st.markdown(
+        '[**https://probateguardian-free-tn.streamlit.app**](https://probateguardian-free-tn.streamlit.app)',
+    )
+    st.success(
+        "✅ **LIVE NOW** — Scott Hardesty + Branton Walker can access ProbateGuardian anytime "
+        "on phone, tablet, or desktop → **https://probateguardian-free-tn.streamlit.app**"
+    )
+
+    with st.expander("🚀 Deploy & Update — Streamlit Cloud + GitHub", expanded=False):
         st.markdown(
             """
-            Deploy once → Branton gets a **24/7 permanent URL** (e.g. `https://probateguardian-tn.streamlit.app`).
+            **Live URL:** [https://probateguardian-free-tn.streamlit.app](https://probateguardian-free-tn.streamlit.app)
 
-            **Prerequisites:** GitHub account · Repo pushed · [share.streamlit.io](https://share.streamlit.io) login
+            **GitHub Repo:** [https://github.com/scotterh23/ProbateGuardian_TN.git](https://github.com/scotterh23/ProbateGuardian_TN.git)
 
-            **Step 1 — Push code to GitHub (run locally):**
+            **Push updates (run locally after any change):**
             ```bash
             cd /Users/scott/ProbateGuardian_TN
-            git add app.py requirements.txt leads_data.json && git commit -m "ProbateGuardian CRM deploy"
+            git add app.py requirements.txt leads_data.json && git commit -m "ProbateGuardian CRM update"
             git push origin main
             ```
 
-            **Step 2 — Streamlit Cloud (browser):**
-            1. Go to **[share.streamlit.io](https://share.streamlit.io)** → **Create app**
-            2. Select your GitHub repo → branch `main` → main file path: **`app.py`**
-            3. Click **Deploy** → copy the permanent URL and share with Branton
+            Streamlit Cloud auto-redeploys from `main` — Branton's link stays the same.
 
-            **Step 3 — Share access:**
-            - Send Branton the live URL — works on phone, tablet, desktop 24/7
-            - Optional: add `secrets.toml` in Streamlit Cloud settings for future API keys
+            **Manage app:** [share.streamlit.io](https://share.streamlit.io) → select **ProbateGuardian_TN** → main file: `app.py`
 
-            **Repo must include:** `app.py` · `requirements.txt` (contains `streamlit>=1.32.0`)
+            **Repo must include:** `app.py` · `requirements.txt` (`streamlit>=1.32.0`)
             """
         )
 
