@@ -186,15 +186,23 @@ def persist_leads() -> list:
 
 
 def sync_leads_session() -> list:
-    """Merge disk + session so metrics always reflect all saved leads."""
-    disk_leads = load_leads()
-    session_leads = st.session_state.get("leads", [])
-    if len(disk_leads) > len(session_leads):
-        st.session_state.leads = disk_leads
-    elif session_leads:
-        st.session_state.leads = session_leads
-    else:
-        st.session_state.leads = disk_leads
+    """Merge disk + session by lead id — sidebar and Analytics always match."""
+    merged: dict = {}
+    for lead in load_leads():
+        lid = lead.get("id")
+        if lid:
+            merged[lid] = lead
+    for lead in st.session_state.get("leads", []):
+        lid = lead.get("id")
+        if lid:
+            merged[lid] = lead
+    st.session_state.leads = [
+        normalize_lead(l) for l in sorted(
+            merged.values(),
+            key=lambda x: x.get("created", ""),
+            reverse=True,
+        )
+    ]
     return st.session_state.leads
 
 
@@ -203,38 +211,39 @@ VENDOR_SLOTS = 4
 VENDOR_CATEGORIES = [
     "Probate Attorney",
     "Title Company",
-    "CPA / Tax Professional (stepped-up basis, capital gains)",
-    "Insurance Guidance for vacant homes",
-    "Property Maintenance / Lawn Care / Security Checks",
-    "Property Management / Rental Option",
+    "CPA / Tax Professional",
+    "Insurance for vacant homes",
+    "Property Maintenance / Lawn / Security",
+    "Property Management / Rental",
     "Deep Cleaning & Staging",
     "Estate Sale Companies",
-    "Junk Removal / Dumpster Rental",
+    "Junk Removal / Dumpster",
     "Movers",
-    "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
-    "Cash Buyers / Investor Option",
+    "General Contractors / Handyman / Repairs",
+    "Cash Buyers / Investor",
     "Traditional Listing Agent",
-    "Buyout / Heir Mediation Services",
+    "Buyout / Heir Mediation",
 ]
 
 VENDOR_LEGACY_ALIASES = {
     "Estate Sale": "Estate Sale Companies",
-    "Contents Removal / Dump Truck": "Junk Removal / Dumpster Rental",
+    "Contents Removal / Dump Truck": "Junk Removal / Dumpster",
     "Cleaning": "Deep Cleaning & Staging",
-    "Repairs / Funded Repairs": "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
-    "Express Offers": "Cash Buyers / Investor Option",
+    "Repairs / Funded Repairs": "General Contractors / Handyman / Repairs",
+    "Repairs": "General Contractors / Handyman / Repairs",
+    "Express Offers": "Cash Buyers / Investor",
     "Sentimental Item Shipping": "Movers",
+    "CPA / Tax Professional (stepped-up basis, capital gains)": "CPA / Tax Professional",
+    "Insurance Guidance for vacant homes": "Insurance for vacant homes",
+    "Property Maintenance / Lawn Care / Security Checks": "Property Maintenance / Lawn / Security",
+    "Property Management / Rental Option": "Property Management / Rental",
+    "Junk Removal / Dumpster Rental": "Junk Removal / Dumpster",
+    "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring": "General Contractors / Handyman / Repairs",
+    "Cash Buyers / Investor Option": "Cash Buyers / Investor",
+    "Buyout / Heir Mediation Services": "Buyout / Heir Mediation",
 }
 
-VENDOR_LEGACY_IMPORT = {
-    "Estate Sale": "Estate Sale Companies",
-    "Contents Removal / Dump Truck": "Junk Removal / Dumpster Rental",
-    "Cleaning": "Deep Cleaning & Staging",
-    "Repairs / Funded Repairs": "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
-    "Repairs": "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
-    "Express Offers": "Cash Buyers / Investor Option",
-    "Sentimental Item Shipping": "Movers",
-}
+VENDOR_LEGACY_IMPORT = dict(VENDOR_LEGACY_ALIASES)
 
 
 def _empty_vendor_contact() -> dict:
@@ -268,35 +277,37 @@ def _vendor_slot(**primary) -> dict:
 
 DEFAULT_VENDORS = {
     "Probate Attorney": _vendor_slot(
-        vendor_1=_vendor_contact("[Attorney Name]", "[Phone]", "good with heirs"),
+        vendor_1=_vendor_contact("[Attorney Name]", "[Phone]", "fast with heirs"),
     ),
     "Title Company": _vendor_slot(),
-    "CPA / Tax Professional (stepped-up basis, capital gains)": _vendor_slot(
+    "CPA / Tax Professional": _vendor_slot(
         vendor_1=_vendor_contact("[CPA Name]", "[Phone]", "stepped-up basis · capital gains"),
     ),
-    "Insurance Guidance for vacant homes": _vendor_slot(
+    "Insurance for vacant homes": _vendor_slot(
         vendor_1=_vendor_contact("[Insurance Contact]", "[Phone]", "vacant home specialist"),
     ),
-    "Property Maintenance / Lawn Care / Security Checks": _vendor_slot(
+    "Property Maintenance / Lawn / Security": _vendor_slot(
         vendor_1=_vendor_contact("[Lawn / Security]", "[Phone]", "vacant home checks"),
     ),
-    "Property Management / Rental Option": _vendor_slot(),
+    "Property Management / Rental": _vendor_slot(
+        vendor_1=_vendor_contact("[PM Contact]", "[Phone]", "good for out-of-town families"),
+    ),
     "Deep Cleaning & Staging": _vendor_slot(
         vendor_1=_vendor_contact("[Cleaning Co]", "[Phone]", "estate deep clean"),
     ),
     "Estate Sale Companies": _vendor_slot(
         vendor_1=_vendor_contact("[Estate Sale Co]", "[Phone]", "fast response"),
     ),
-    "Junk Removal / Dumpster Rental": _vendor_slot(
+    "Junk Removal / Dumpster": _vendor_slot(
         vendor_1=_vendor_contact("[Haul-Off Service]", "[Phone]", "dumpster rental"),
     ),
     "Movers": _vendor_slot(
-        vendor_1=_vendor_contact("[Mover]", "[Phone]", "estate moves"),
+        vendor_1=_vendor_contact("[Mover]", "[Phone]", "good for out-of-town families"),
     ),
-    "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring": _vendor_slot(
+    "General Contractors / Handyman / Repairs": _vendor_slot(
         vendor_1=_vendor_contact("[Contractor]", "[Phone]", "funded repairs partner"),
     ),
-    "Cash Buyers / Investor Option": _vendor_slot(
+    "Cash Buyers / Investor": _vendor_slot(
         vendor_1=_vendor_contact(
             "eXp Express Offers Network",
             "615-953-0758",
@@ -304,7 +315,7 @@ DEFAULT_VENDORS = {
         ),
     ),
     "Traditional Listing Agent": _vendor_slot(),
-    "Buyout / Heir Mediation Services": _vendor_slot(
+    "Buyout / Heir Mediation": _vendor_slot(
         vendor_1=_vendor_contact("[Mediator]", "[Phone]", "sibling buyout specialist"),
     ),
 }
@@ -705,7 +716,10 @@ def compute_analytics(leads: list) -> dict:
     total_calls = sum(l.get("calls", 0) for l in leads)
     branton_count = sum(1 for l in leads if l.get("assigned_to_branton"))
     today = datetime.now().strftime("%Y-%m-%d")
-    due_today = sum(1 for l in leads if l.get("follow_up_iso", "") <= today and l.get("pipeline_stage") != "Closed")
+    due_today = sum(
+        1 for l in leads
+        if l.get("follow_up_iso", "") <= today and effective_pipeline_stage(l) != "Closed"
+    )
 
     new_hot = stages.get("New/Hot", 0)
     warm = stages.get("Warm", 0)
@@ -1338,9 +1352,7 @@ Schedule a complimentary **10–15 minute call** — phone or in-person at the p
 # ── Load persisted leads (after all helpers are defined) ─────────────────────
 if "leads" not in st.session_state:
     st.session_state.leads = load_leads()
-    save_leads(st.session_state.leads)
-else:
-    sync_leads_session()
+sync_leads_session()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1354,7 +1366,7 @@ with st.sidebar:
     st.markdown("**ProbateGuardian Free TN**")
     st.markdown("Compassion · Clarity · Closings")
     st.markdown("---")
-    analytics = compute_analytics(st.session_state.leads)
+    analytics = compute_analytics(sync_leads_session())
     st.metric("Total Leads", analytics["total"])
     st.metric(f"{PARTNER_NAME.split()[0]}", analytics["branton_count"])
     st.metric("Due Today", analytics["due_today"])
@@ -1622,7 +1634,7 @@ with tab3:
             """
         )
 
-    analytics = compute_analytics(st.session_state.leads)
+    analytics = compute_analytics(sync_leads_session())
 
     st.markdown("### 📈 Analytics")
     m1, m2, m3, m4, m5, m6 = st.columns(6)
@@ -1945,7 +1957,7 @@ with tab5:
     st.subheader("🛠️ Vendors Rolodex")
     st.caption(
         "Up to 4 vendors per category — name, phone, and quick notes "
-        '(e.g. "good with heirs", "fast response", "vacant home specialist"). '
+        '(e.g. "fast with heirs", "vacant home specialist", "good for out-of-town families"). '
         "Auto-populates in every Guardian Kit."
     )
 
@@ -1976,7 +1988,7 @@ with tab5:
                     contact["notes"] = st.text_input(
                         "Notes",
                         value=contact.get("notes", ""),
-                        placeholder='e.g. good with heirs · fast response',
+                        placeholder='e.g. fast with heirs · vacant home specialist',
                         key=f"vnotes_{slot}_{category}",
                         label_visibility="collapsed",
                     )
