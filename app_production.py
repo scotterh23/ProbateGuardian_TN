@@ -743,14 +743,23 @@ def _is_high_score_lead(lead: dict) -> bool:
     return int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD
 
 
+def _is_hot_lead(lead: dict) -> bool:
+    stage = lead.get("pipeline_stage", "")
+    if stage in ("🔥 Hot / New (call today)", "New/Hot", "New"):
+        return True
+    return effective_pipeline_stage(lead) == "New/Hot"
+
+
 def _filter_leads_due_today(leads: list) -> list:
+    """Today's follow-ups plus all Hot leads — Hot sorted first."""
     today = datetime.now().strftime("%Y-%m-%d")
     result = [
         l for l in leads
         if effective_pipeline_stage(l) != "Closed"
-        and (l.get("follow_up_iso", "") == today or _is_high_score_lead(l))
+        and (l.get("follow_up_iso", "") == today or _is_hot_lead(l))
     ]
     result.sort(key=lambda x: (
+        0 if _is_hot_lead(x) else 1,
         0 if x.get("follow_up_iso", "") == today else 1,
         -int(x.get("score") or 0),
         x.get("follow_up_iso", "9999-12-31"),
@@ -763,6 +772,16 @@ def _apply_crm_list_filters(leads: list) -> list:
     if st.session_state.get("crm_list_mode") == "due_today":
         result = _filter_leads_due_today(result)
     return result
+
+
+def _set_due_today_list_mode() -> None:
+    st.session_state.crm_list_mode = "due_today"
+    st.session_state.crm_pipe_filter = "All"
+
+
+def _set_all_leads_list_mode() -> None:
+    st.session_state.crm_list_mode = "all"
+    st.session_state.crm_pipe_filter = "All"
 
 
 def _sync_top_pipe_filter_from_detail(detail_stage: str) -> None:
@@ -2000,15 +2019,21 @@ with tab_dashboard:
     st.markdown('<div class="crm-top-filters-start"></div>', unsafe_allow_html=True)
     due_col, all_col, _ = st.columns([1, 1, 3], gap="small")
     with due_col:
-        if st.button("📅 Due Today", key="crm_due_today_btn", use_container_width=True, type="primary"):
-            st.session_state.crm_list_mode = "due_today"
-            st.session_state.crm_pipe_filter = "All"
-            st.rerun()
+        st.button(
+            "📅 Due Today",
+            key="crm_due_today_btn",
+            use_container_width=True,
+            type="primary",
+            on_click=_set_due_today_list_mode,
+        )
     with all_col:
-        if st.button("All Leads", key="crm_all_leads_btn", use_container_width=True, type="secondary"):
-            st.session_state.crm_list_mode = "all"
-            st.session_state.crm_pipe_filter = "All"
-            st.rerun()
+        st.button(
+            "All Leads",
+            key="crm_all_leads_btn",
+            use_container_width=True,
+            type="secondary",
+            on_click=_set_all_leads_list_mode,
+        )
 
     analytics = compute_analytics(get_leads())
 
@@ -2121,11 +2146,22 @@ with tab_dashboard:
         if county_filter != "All":
             filtered = [l for l in filtered if l.get("county") == county_filter]
 
-        list_filtered = _apply_crm_list_filters(filtered)
+        if st.session_state.get("crm_list_mode") == "due_today":
+            list_base = list(st.session_state.leads)
+            if branton_filter == f"Assigned to {PARTNER_NAME}":
+                list_base = [l for l in list_base if l.get("assigned_to_branton")]
+            elif branton_filter == "Unassigned":
+                list_base = [l for l in list_base if not l.get("assigned_to_branton")]
+            if county_filter != "All":
+                list_base = [l for l in list_base if l.get("county") == county_filter]
+            list_filtered = _filter_leads_due_today(list_base)
+        else:
+            list_filtered = filtered
+
         filter_bits = []
         if st.session_state.get("crm_list_mode") == "due_today":
-            filter_bits.append("due today + high-score")
-        if pipe_filter != "All":
+            filter_bits.append("due today + 🔥 Hot")
+        elif pipe_filter != "All":
             filter_bits.append(pipe_filter)
         filter_note = f" · List: **{', '.join(filter_bits)}**" if filter_bits else ""
         st.caption(
