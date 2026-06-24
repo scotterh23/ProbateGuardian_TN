@@ -2639,12 +2639,431 @@ with tab_vendors:
         save_vendors(st.session_state.vendors)
         st.success("✅ Vendor Rolodex saved — all Guardian Kits will reflect these contacts.")
 
+def _render_training_swipe_section(title: str, scripts: list) -> None:
+    """One swipe category — label, attribution, copy-paste body."""
+    with st.expander(title, expanded=False):
+        for label, attribution, body in scripts:
+            st.markdown(f"**{label}** · *{attribution}*")
+            st.code(body.strip(), language=None)
+
+
+TRAINING_SWIPE_FILES = [
+    (
+        "📞 Call Scripts by Stage",
+        [
+            (
+                "Stage 1 — First Contact (Cold)",
+                "Aaron Novello + David Pannell",
+                """Hi, is this [Heir Name]?
+
+Hey [Heir Name], my name is [Your Name] — I'm a local Realtor here in Middle Tennessee with eXp Realty. First, I want to say I'm truly sorry for your loss. I know this is probably the last call you want right now.
+
+I realize I may be reaching out a little early, and I want to do that very respectfully. Nothing needs to happen today — I'm not calling with an agenda.
+
+I came across the probate filing for [Decedent]'s property at [Address] in [County]. I simply wanted to introduce myself as a local resource — so when questions come up, you have someone in your corner who does this every day.
+
+Before I share how I might help — if you don't mind me asking — what's been the hardest part of all this so far?
+
+[STOP. Listen. Use "Tell me more about that" 2–3 times.]""",
+            ),
+            (
+                "Stage 2 — Warm / Nurture (Call Back)",
+                "Rick Yen + David Pannell",
+                """Hi [Heir Name], it's [Your Name] — we spoke briefly about [Decedent]'s property at [Address]. I hope things have been a little easier this week.
+
+I wasn't calling to push anything — just checking in. Has anything changed with the estate or the property since we last talked?
+
+Help me understand — where are you in the process right now? Attorney engaged? Letters issued? Still sorting things out?
+
+If it would help, I can still put together a free Equity Snapshot / Net Sheet — real numbers, not a Zillow guess — whenever you're ready. No pressure, no timeline.
+
+Would a quick 10-minute call later this week make sense, or is now still too early?""",
+            ),
+            (
+                "Stage 3 — Appointment Set Confirmation",
+                "Aaron Novello",
+                """Hi [Heir Name], [Your Name] here — confirming our [walk-through / Zoom] on [Day] at [Time] for [Address].
+
+I'll bring a complimentary Equity Snapshot — what the estate would actually NET after debts, closing costs, and repairs. No obligation.
+
+Quick prep that helps me serve you better:
+• How many heirs are involved?
+• Is the property vacant or occupied?
+• Any known mortgage, liens, or estate debts?
+• Is your probate attorney already involved?
+
+If anything changes, just text or call me at 615-953-0758. Looking forward to helping your family get clarity.""",
+            ),
+            (
+                "Stage 4 — Post-Appointment / Net Sheet Delivery",
+                "Rick Yen + Jose",
+                """Hi [Heir Name], [Your Name] here — thank you again for your time at [Address].
+
+As promised, I'm sending your Equity Snapshot / Net Sheet today. This shows what the estate could realistically net across your main options — traditional listing, Express Offers, or as-is — subject to court approval.
+
+Three paths most families consider:
+1. List traditionally — funded repairs available, zero out of pocket before close
+2. Express Offers — multiple vetted cash buyers compete, as-is, fast certainty
+3. Hold / rent / sibling buyout — we can run those numbers too
+
+No decision needed today. What questions came up after you reviewed the numbers?
+
+May I make a suggestion? Would it help to walk through this with your attorney on a brief 3-way call?""",
+            ),
+            (
+                "Stage 5 — Listed / Under Contract Check-in",
+                "Bruce & Heath + Jose",
+                """Hi [Heir Name], [Your Name] checking in on [Address].
+
+Quick status for your file:
+• Marketing / showings: [status]
+• Vendor coordination: [estate sale / cleanout / lawn / lockbox — as applicable]
+• Attorney loop-in: [done / scheduled]
+• Target timeline: subject to court approval
+
+You focus on family — we handle the heavy lifting. Anything worrying you that I should address today?
+
+I'll keep you updated at every milestone. Scott Hardesty · 615-953-0758.""",
+            ),
+        ],
+    ),
+    (
+        "🛡️ Objection Handlers",
+        [
+            (
+                "We already have an attorney",
+                "Aaron Novello + Jose",
+                """Perfect — that's exactly who should be handling the legal piece. I work alongside probate attorneys every day; I handle the property side only.
+
+I never give legal advice — I defer everything to their office. My job is to make sure when you're ready to sell, you have real numbers, vetted vendors, and a clear path — subject to court approval.
+
+Tell me more about where they are in the process — have letters been issued yet?""",
+            ),
+            (
+                "We're not ready to sell",
+                "David Pannell + Aaron Novello",
+                """Totally understand — and you shouldn't feel rushed. Most families I work with aren't ready on call one either.
+
+Can I make a suggestion? Let me send a free Net Sheet / Equity Snapshot so when you ARE ready — next month or next year — you're not starting from zero or trusting a Zillow guess.
+
+No strings, no follow-up pressure. Would that be helpful?""",
+            ),
+            (
+                "It's too early",
+                "Aaron Novello",
+                """That's exactly why I'm calling early — so you have a resource before you need one. Very respectfully, zero timeline.
+
+I'm not asking you to decide anything. I just want you to know there's a local specialist who handles probate property every day in [County] when questions come up.
+
+Can I stay in touch lightly — maybe one check-in in a few weeks?""",
+            ),
+            (
+                "We already have a price in mind",
+                "Rick Yen",
+                """Tell me more about that — where did that number come from?
+
+I'd love to see if the Net Sheet aligns. Sometimes estates are pleasantly surprised; sometimes the number includes costs they haven't accounted for yet. Either way, good information.
+
+The only way to know what the estate actually nets is to run the real math — debts, closing costs, repairs, commissions. Happy to do that free whenever you're ready.""",
+            ),
+            (
+                "We already have a Realtor / agent",
+                "David Pannell",
+                """Good — it sounds like you're taking this seriously. I'm not here to step on anyone's toes.
+
+I specialize in probate — Net Sheets, heir coordination, estate sales, Express Offers, Muniment paths, court timelines. If your current agent doesn't do probate every week, happy to be a second opinion — free, no obligation.
+
+If you're all set, I respect that completely. Can I ask — have they walked you through what you'd NET, not just list price?""",
+            ),
+            (
+                "Don't call again / not interested",
+                "Aaron Novello",
+                """I completely respect that — and I'm sorry if the timing was wrong.
+
+I'll make a note not to reach out by phone. If it's okay, I'd love to send one email with a free Net Sheet template and a vendor list — something useful if things change down the road. Totally fine if not.
+
+Thank you for your time, and again, I'm sorry for your loss.""",
+            ),
+            (
+                "Property needs too much work",
+                "Bruce & Heath + Rick Yen",
+                """That's more common than you'd think — and it's exactly why families use a Project Coordinator.
+
+We handle the heavy lifting: estate sale, junk removal, cleaning, lockbox, lawn, utilities — and funded repairs so you're not paying out of pocket before close.
+
+Or, if speed matters more than top dollar, Express Offers brings multiple as-is cash buyers — you compare, not one lowball. Subject to court approval either way.
+
+Would it help to see both numbers side by side?""",
+            ),
+            (
+                "Siblings don't agree",
+                "Jose + Aaron Novello",
+                """That's one of the hardest parts — and more common than people admit.
+
+Tell me more about that. How many heirs? Does anyone want to buy out the others? Anyone out of state?
+
+I can run buyout math and present neutral Net Sheet options so everyone works from the same facts — not emotions. Sometimes one short call with all parties saves months of conflict.
+
+Would a neutral third-party walkthrough help — or should I loop in Scott at 615-953-0758?""",
+            ),
+        ],
+    ),
+    (
+        "🔀 Transition Scripts (Probate Help → Real Estate Options)",
+        [
+            (
+                "From sympathy → discovery",
+                "Rick Yen",
+                """I appreciate you sharing that — it sounds like [mirror their words].
+
+Help me understand — walk me through where things stand with the estate right now. What's your role — executor, beneficiary, or helping a family member?
+
+Who else is involved in the decision? I'd love the full picture so I'm not speaking out of turn.""",
+            ),
+            (
+                "From overwhelmed → Project Coordinator",
+                "Jose + Bruce & Heath",
+                """It sounds like there's a lot on your plate — property, paperwork, family, and grief all at once.
+
+Here's what a lot of families find helpful: one Project Coordinator who handles the property heavy lifting — estate sale, cleanout, vendors, lockbox, utilities, showings or cash offers — while you focus on family and what your attorney needs.
+
+You don't have to figure it all out today. Would it help if I mapped what that would look like for [Address] — free, no obligation?""",
+            ),
+            (
+                "From 'just clearing the estate' → sale options",
+                "David Pannell + Aaron Novello",
+                """That makes sense — most families start with 'we just need to clear it out' and then realize they need real numbers before anyone can agree.
+
+Once contents are handled, there are usually three paths:
+• Traditional listing — top dollar, funded repairs available
+• Express Offers — as-is, multiple cash buyers, fast certainty
+• Sibling buyout — one heir keeps it, others take cash
+
+All subject to court approval. Want me to show you what each path looks like in dollars for this estate?""",
+            ),
+            (
+                "From legal process → property readiness",
+                "Jose",
+                """While your attorney handles court authority, there are things we can prepare now so you're not losing months later:
+
+• Equity Snapshot / Net Sheet — so heirs agree on facts
+• Property walkthrough — condition, repairs, as-is value
+• Vendor quotes — estate sale, cleanout, lawn, insurance for vacant home
+• Timeline map — what happens after letters testamentary
+
+I never market before your attorney confirms authority to sell. I just get you ready. Make sense?""",
+            ),
+            (
+                "From curiosity → appointment",
+                "Aaron Novello",
+                """I'm not asking you to decide anything today.
+
+May I make a suggestion?
+
+Would a brief 10-to-15-minute call — or a quick walk-through if you're local — make sense, just to leave you with a free Equity Snapshot? No pressure, no commitment.
+
+What works better — [Day A] or [Day B]?""",
+            ),
+        ],
+    ),
+    (
+        "📦 Guardian Kit Templates",
+        [
+            (
+                "Text — send with Guardian Kit link/PDF",
+                "Bruce & Heath + Scott Hardesty",
+                """Hi [Heir Name], [Your Name] here — as promised, here's your Guardian Kit for [Decedent]'s property at [Address].
+
+Inside you'll find:
+✓ Your personalized vendor rolodex (attorney, estate sale, cleanout, cash buyers)
+✓ Property path options — list, Express Offers, Muniment, buyout
+✓ What to expect timeline — subject to court approval
+✓ My contact: 615-953-0758
+
+No obligation — built so your family has one clear resource. Questions? Just reply here.""",
+            ),
+            (
+                "Email subject lines",
+                "David Pannell",
+                """Guardian Kit — Estate of [Decedent] · [Address]
+Your Free Probate Property Resource Kit — [County]
+[Decedent] Property — Vendor List + Options (No Obligation)
+Equity Snapshot Request — Estate of [Decedent]""",
+            ),
+            (
+                "Voicemail — no answer (first touch)",
+                "Aaron Novello",
+                """Hi [Heir Name], this is [Your Name] with eXp Realty in Middle Tennessee. I'm sorry for your loss — I know this is a difficult time.
+
+I'm reaching out very respectfully about [Decedent]'s property at [Address]. No agenda, no pressure — I simply help probate families with property questions, Net Sheets, and vendor coordination.
+
+I'll try you once more, or feel free to call me at 615-953-0758. Again, I'm sorry for your loss.""",
+            ),
+            (
+                "Voicemail — follow-up after speaking",
+                "Rick Yen",
+                """Hi [Heir Name], [Your Name] again — we spoke briefly about [Address]. Just following up on the free Equity Snapshot I mentioned.
+
+Happy to keep this simple — 10 minutes, your questions answered, no obligation. Call me at 615-953-0758 when it's convenient. Thanks, [Heir Name].""",
+            ),
+            (
+                "Guardian Kit intro — live on call",
+                "Jose + Bruce & Heath",
+                """What I'd like to put together for you is something we call a Guardian Kit — think of it as a probate property playbook for your family.
+
+It includes your vendor contacts, every sale path explained in plain English, funded repair options, Express Offers if you want speed, and a timeline map — all subject to court approval.
+
+It's free, there's no obligation, and it gives everyone involved the same information. Would that be helpful?""",
+            ),
+        ],
+    ),
+    (
+        "📅 Follow-up Sequences",
+        [
+            (
+                "3-Touch Minimum — Day 0 / 2 / 7",
+                "Aaron Novello + David Pannell",
+                """TOUCH 1 — Day 0 (First call)
+Respectful opener → empathy → discovery → "May I make a suggestion?" → schedule or soft close.
+
+TOUCH 2 — Day 2 (Follow-up call or VM)
+"Hi [Heir], [Your Name] — just checking in on [Address]. No pressure — did any questions come up since we talked? Happy to send the free Net Sheet if helpful. 615-953-0758."
+
+TOUCH 3 — Day 7 (Value add)
+"Hi [Heir], following up one last time for now. I put together [Guardian Kit / vendor list / market snapshot for County] — want me to send it? Either way, I'm here when your family is ready."
+
+[Log every touch on Dashboard. Set nurture follow-up date if not ready.]""",
+            ),
+            (
+                "Nurture — monthly light touch (90 days)",
+                "David Pannell",
+                """Hi [Heir Name], [Your Name] — hope the estate process is moving along.
+
+No agenda — just wanted you to know I'm still here if property questions come up on [Address]. Market in [County] has shifted slightly since we last spoke — happy to refresh your Net Sheet free if useful.
+
+Reply STOP anytime and I'll only check in quarterly. Take care.""",
+            ),
+            (
+                "Post–Net Sheet — 48-hour follow-up",
+                "Rick Yen",
+                """Hi [Heir Name], did you get a chance to look at the Net Sheet for [Address]?
+
+What questions came up? Sometimes the heir numbers surprise people — happy to walk through line by line.
+
+If siblings need to see it too, I can join a short group call — neutral facts, less arguing. When works for you?""",
+            ),
+            (
+                "Attorney loop-in — after heir engagement",
+                "Jose",
+                """Subject: Property Coordination — Estate of [Decedent] · [Address]
+
+Dear [Attorney Name],
+
+Thank you for handling the legal side for the [Decedent] estate. [Heir Name] asked me to coordinate the property piece.
+
+I will not market or show the property until you confirm authority to sell. Attached/linked: proposed listing timeline, Net Sheet, and vendor list for your file.
+
+Please let me know if you need anything from me. Scott Hardesty · eXp Realty · 615-953-0758""",
+            ),
+            (
+                "Long-term check-in — 6+ months",
+                "Aaron Novello",
+                """Hi [Heir Name], [Your Name] — it's been a while since we spoke about [Address].
+
+Totally understand probate timelines vary. If the property is still on your plate, I'm happy to refresh your numbers — no cost, no pressure.
+
+If you've already moved forward with someone else, congrats — and I'm glad your family got taken care of. If not, I'm still here. 615-953-0758.""",
+            ),
+        ],
+    ),
+    (
+        "🎯 Positioning Language",
+        [
+            (
+                "Project Coordinator — core positioning",
+                "Jose + Bruce & Heath",
+                """I work as a Project Coordinator for probate families — not just a listing agent.
+
+That means one call and we handle: Net Sheet, estate sale, contents removal, cleaning, lockbox, utilities, lawn, showings or Express Offers, and attorney coordination — subject to court approval.
+
+You focus on family and grief. We handle the heavy lifting.""",
+            ),
+            (
+                "Probate specialist — David Pannell frame",
+                "David Pannell",
+                """I specialize in probate real estate — it's the only niche I focus on in Middle Tennessee.
+
+That means I understand court timelines, heir dynamics, Muniment of Title paths, sibling buyouts, and how to net the estate — not just get a list price.
+
+I'm not calling to sell you anything today. I'm calling to see if I can be your property resource while your attorney handles the legal piece.""",
+            ),
+            (
+                "Court approval — always say it",
+                "Jose + Aaron Novello",
+                """Use in every timeline, offer, and close:
+
+"Subject to court approval."
+
+"Your attorney will confirm when we have authority to market."
+
+"We won't list or accept offers until your attorney gives the green light."
+
+"Timeline depends on court — I'll coordinate with their office every step." """,
+            ),
+            (
+                "Not a salesperson — compassion first",
+                "Aaron Novello",
+                """You're not calling to sell. You're calling to help a family in pain make a good decision.
+
+"I realize I may be reaching out a little early — very respectfully."
+
+"Nothing needs to happen today."
+
+"Tell me more about that." [Use 2–3 times — then stop talking.]
+
+The deals follow the compassion. Every time.""",
+            ),
+            (
+                "Price anchoring without quoting",
+                "Rick Yen",
+                """In [County], similar homes can range from $[LOW] as-is to $[HIGH] updated — but that's from the outside without walking through.
+
+I wouldn't trust an online estimate on a probate property anyway — every heir situation is different.
+
+The only number that matters is what the estate NETS after debts, costs, and repairs. That's the Equity Snapshot — free, whenever you're ready.""",
+            ),
+            (
+                "Express Offers — speed positioning",
+                "Bruce & Heath + eXp",
+                """Express Offers through eXp brings multiple vetted cash buyers — you compare, not one lowball.
+
+Zero repairs, zero showings, close in as little as 14 days — subject to court approval.
+
+Perfect when heirs live out of state, the property needs work, or the family wants certainty over top dollar.""",
+            ),
+            (
+                "Partnership with Scott — escalation",
+                "Scott Hardesty team",
+                """For anything complex — sibling disputes, buyout math, competing agents, $500K+ estates, or attorney conflicts — Scott Hardesty jumps in directly.
+
+Scott Hardesty · eXp Realty · Mount Juliet, TN · 615-953-0758
+
+You never have to figure out the hard stuff alone.""",
+            ),
+        ],
+    ),
+]
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — Training
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_training:
     st.subheader("🎥 Training — Elite Probate Playbook")
-    st.caption("Aaron Novello · Rick Yen · Jose · Bruce & Heath — study before every call.")
+    st.caption(
+        "Aaron Novello · Rick Yen · David Pannell · Jose · Bruce & Heath — "
+        "study before every call."
+    )
 
     st.markdown("---")
     st.markdown("### ⭐ Featured Training — Start Here")
@@ -2679,39 +3098,13 @@ with tab_training:
     )
 
     st.markdown("---")
-    st.markdown("### 🎙️ Elite Script Swipes — Memorize These")
-    st.markdown(
-        """
-        **Respectful opener (Aaron):**
-        > *"I realize I may be reaching out a little early… very respectfully. Nothing needs to happen today."*
-
-        **Honest expectations (Aaron + Rick):**
-        > *"More likely than not the goal will be to sell — but that might be months from now."*
-
-        **Power listen (Aaron + Rick):**
-        > *"Tell me more about that."* — use 2–3 times per call.
-
-        **Rick Yen price anchoring:**
-        > *"In [county], similar homes range from $[LOW] as-is to $[HIGH] updated — but that's from the outside. The Net Sheet gives YOUR number."*
-
-        **Rick Yen collaborative:**
-        > *"Help me understand — walk me through where things stand with the estate."*
-
-        **Family dynamics (Jose):**
-        - *"How many heirs? Everyone on the same page?"*
-        - *"Anyone want to buy out the others?"*
-        - *"Anyone out of state?"*
-
-        **Bruce/Heath concierge:**
-        > *"You focus on family. We handle the heavy lifting — estate sale, cleanout, lockbox, utilities, lawn."*
-
-        **Close (Aaron):**
-        > *"May I make a suggestion?"* → 10–15 min call → free Equity Snapshot
-
-        **Court language (always):**
-        > *"Subject to court approval"* — every timeline, every offer, every close.
-        """
+    st.markdown("### 📋 Swipe Files & Scripts — Copy & Paste")
+    st.caption(
+        "Tap a category · tap the copy icon on any block · paste into calls, texts, or emails. "
+        f"Built for {PARTNER_NAME} on mobile."
     )
+    for section_title, scripts in TRAINING_SWIPE_FILES:
+        _render_training_swipe_section(section_title, scripts)
 
     st.markdown("---")
     st.markdown("### ⚖️ Attorney Outreach Playbook")
