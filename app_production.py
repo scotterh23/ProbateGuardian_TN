@@ -1,5 +1,6 @@
 import base64
 import csv
+import html
 import io
 import json
 import os
@@ -188,6 +189,26 @@ st.markdown(
     .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button:hover {
         transform: none !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
+    }
+    .crm-lead-call-line {
+        font-weight: 700;
+        font-size: 0.92rem;
+        line-height: 1.35;
+        color: #3fb950;
+        margin: 0.2rem 0 0.05rem 0;
+        word-break: break-word;
+    }
+    .crm-lead-primary-contact {
+        background: linear-gradient(135deg, #1a3a2a 0%, #0d2818 100%);
+        border: 1px solid #2ea043;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        margin-bottom: 0.75rem;
+        font-size: clamp(0.95rem, 3.5vw, 1.15rem);
+        font-weight: 700;
+        line-height: 1.45;
+        color: #aff5b4;
+        word-break: break-word;
     }
     .crm-quick-stage-start { display: none; }
     .crm-quick-stage-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
@@ -865,13 +886,87 @@ def _flush_dash_notes_in_memory(lead_id: str) -> None:
         lead["notes"] = []
 
 
+def _format_poc_name(name: str) -> str:
+    name = (name or "").strip()
+    if not name:
+        return ""
+    return re.sub(r"\b([A-Z])\b(?!\.)", r"\1.", name)
+
+
+def _lead_poc_name(lead: dict) -> str:
+    name = (lead.get("contact_name") or "").strip()
+    if not name:
+        heirs = (lead.get("heirs") or "").strip()
+        m = re.match(r"^([^(]+)", heirs)
+        if m:
+            name = m.group(1).strip()
+    return _format_poc_name(name) if name else "Contact TBD"
+
+
+def _lead_poc_role(lead: dict) -> str:
+    role = (lead.get("contact_role") or "").strip()
+    if not role:
+        heirs = (lead.get("heirs") or "").strip()
+        m = re.search(r"\(([^)]+)\)", heirs)
+        if m:
+            role = m.group(1).strip()
+    if not role:
+        return ""
+    parts = re.split(r"[/,;&]+|\band\b", role, flags=re.I)
+    return " / ".join(p.strip().title() for p in parts if p.strip())
+
+
+def _lead_poc_phone(lead: dict) -> str:
+    phone = (lead.get("phone") or "").strip()
+    if not phone or phone in ("—", "TBD"):
+        return ""
+    digits = re.sub(r"\D", "", phone)
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    return phone
+
+
+def _lead_poc_email(lead: dict) -> str:
+    email = (lead.get("email") or "").strip()
+    if not email:
+        m = re.search(r"[\w.+-]+@[\w.-]+\.\w+", lead.get("raw") or "", re.I)
+        email = m.group(0) if m else ""
+    return email.upper() if email else ""
+
+
+def _lead_poc_name_role(lead: dict) -> str:
+    name = _lead_poc_name(lead)
+    role = _lead_poc_role(lead)
+    if role:
+        return f"{name} ({role})"
+    return name
+
+
+def _lead_call_line(lead: dict) -> str:
+    identity = _lead_poc_name_role(lead)
+    phone = _lead_poc_phone(lead)
+    if phone:
+        return f"Call {identity} • {phone}"
+    return f"Call {identity}"
+
+
+def _lead_primary_contact_line(lead: dict) -> str:
+    segments = [_lead_poc_name_role(lead)]
+    phone = _lead_poc_phone(lead)
+    if phone:
+        segments.append(phone)
+    email = _lead_poc_email(lead)
+    if email:
+        segments.append(email)
+    return " • ".join(segments)
+
+
 def _lead_list_button_label(lead: dict) -> str:
     name = lead.get("decedent", "Unknown")
     addr = (lead.get("address") or "—")[:48]
-    phone = lead.get("phone") or "—"
     score = lead.get("score", 0)
     status = lead.get("status", "—")
-    return f"{name}\n{addr}\n📞 {phone}  ·  [{score}]  ·  {status}"
+    return f"{name}\n{addr}\n[{score}]  ·  {status}"
 
 
 def _select_crm_lead(lead_id: str) -> None:
@@ -2319,6 +2414,10 @@ with tab_dashboard:
                 with st.container(height=520):
                     for item in list_filtered:
                         is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
+                        st.markdown(
+                            f'<div class="crm-lead-call-line">{html.escape(_lead_call_line(item))}</div>',
+                            unsafe_allow_html=True,
+                        )
                         if st.button(
                             _lead_list_button_label(item),
                             key=f"pick_{item['id']}",
@@ -2337,6 +2436,12 @@ with tab_dashboard:
                 if not lead:
                     st.info("Select a lead from the list.")
                 else:
+                    st.markdown(
+                        '<div class="crm-lead-primary-contact">'
+                        f"Primary Contact: {html.escape(_lead_primary_contact_line(lead))}"
+                        "</div>",
+                        unsafe_allow_html=True,
+                    )
                     e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
                     current_stage = detail_pipeline_stage(lead)
                     with e1:
@@ -2410,8 +2515,7 @@ with tab_dashboard:
 
                     st.caption(
                         f"**{lead.get('decedent', 'Unknown')}** · {lead.get('address', '—')} · "
-                        f"📞 {lead.get('phone') or '—'} · Score **{lead.get('score', 0)}** · "
-                        f"{lead.get('county', '—')}"
+                        f"Score **{lead.get('score', 0)}** · {lead.get('county', '—')}"
                     )
 
                     note_text = st.text_area(
