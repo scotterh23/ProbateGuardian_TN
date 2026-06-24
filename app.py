@@ -183,12 +183,6 @@ st.markdown(
         font-weight: 700 !important;
         box-shadow: 0 4px 14px rgba(240, 180, 41, 0.45) !important;
     }
-    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(2) [data-testid="stButton"] > button {
-        background: linear-gradient(135deg, #30363d, #484f58) !important;
-        color: #f0f6fc !important;
-        font-weight: 600 !important;
-        box-shadow: none !important;
-    }
     .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button:hover {
         transform: none !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
@@ -779,11 +773,6 @@ def _set_due_today_list_mode() -> None:
     st.session_state.crm_pipe_filter = "All"
 
 
-def _set_all_leads_list_mode() -> None:
-    st.session_state.crm_list_mode = "all"
-    st.session_state.crm_pipe_filter = "All"
-
-
 def _sync_top_pipe_filter_from_detail(detail_stage: str) -> None:
     """Keep top Pipeline dropdown (All / New/Hot / Warm / …) in sync with detail stage."""
     st.session_state.crm_pipe_filter = DETAIL_TO_ANALYTICS.get(detail_stage, "All")
@@ -800,8 +789,8 @@ def _on_detail_pipeline_change(lead_id: str) -> None:
 
 
 def _on_top_pipe_filter_change() -> None:
-    """Top Pipeline filter changed — left list uses crm_pipe_filter on next render."""
-    return
+    """Pipeline dropdown changed — exit Do Today mode and filter via dropdown."""
+    st.session_state.crm_list_mode = "all"
 
 
 def _quick_stage_status(stage: str, lead: dict) -> str:
@@ -2017,22 +2006,14 @@ with tab_dashboard:
     st.session_state.setdefault("crm_pipe_filter", "All")
 
     st.markdown('<div class="crm-top-filters-start"></div>', unsafe_allow_html=True)
-    due_col, all_col, _ = st.columns([1, 1, 3], gap="small")
+    due_col, _ = st.columns([1, 4], gap="small")
     with due_col:
         st.button(
-            "📅 Due Today",
+            "📅 Do Today",
             key="crm_due_today_btn",
             use_container_width=True,
             type="primary",
             on_click=_set_due_today_list_mode,
-        )
-    with all_col:
-        st.button(
-            "All Leads",
-            key="crm_all_leads_btn",
-            use_container_width=True,
-            type="secondary",
-            on_click=_set_all_leads_list_mode,
         )
 
     analytics = compute_analytics(get_leads())
@@ -2169,11 +2150,14 @@ with tab_dashboard:
             f"**{len(st.session_state.leads)}** total{filter_note}"
         )
 
-        if not filtered:
-            st.info("No leads match filters. Import via **Import Leads** tab or use Lead Workflow.")
+        if not list_filtered:
+            st.info(
+                "No leads match the current filter. "
+                "Set **Pipeline** to **All** to show every lead, or tap **📅 Do Today** for today's calls."
+            )
         else:
             list_ids = {l["id"] for l in list_filtered}
-            if list_filtered and st.session_state.get("crm_selected_lead_id") not in list_ids:
+            if st.session_state.get("crm_selected_lead_id") not in list_ids:
                 _flush_dash_notes(st.session_state.get("crm_selected_lead_id"))
                 st.session_state.crm_selected_lead_id = list_filtered[0]["id"]
                 st.session_state.pop("_dash_notes_sync_id", None)
@@ -2182,8 +2166,6 @@ with tab_dashboard:
 
             with list_col:
                 st.markdown("**Leads**")
-                if not list_filtered:
-                    st.info("No leads match the current list filter. Tap **All Leads** to reset.")
                 with st.container(height=520):
                     for item in list_filtered:
                         is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
