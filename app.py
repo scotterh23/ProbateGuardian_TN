@@ -16,6 +16,36 @@ PARTNER_NAME = "Branton Walker"
 ASSIGN_STATUS = f"Assigned to {PARTNER_NAME}"
 LEGACY_ASSIGN_STATUSES = ("Assigned to Brantley", ASSIGN_STATUS)
 PIPELINE_STAGES = ["New/Hot", "Warm", "Appt", "Contract", "Closed"]
+DETAIL_PIPELINE_STAGES = [
+    "🔥 Hot / New (call today)",
+    "Warm / Talking",
+    "Nurture / Call Back",
+    "Not Interested / Keeping",
+    "Appointment Set",
+    "Listed / Under Contract",
+    "Closed / Sold",
+    "Archived",
+]
+NURTURE_STAGE = "Nurture / Call Back"
+LEGACY_TO_DETAIL = {
+    "New/Hot": "🔥 Hot / New (call today)",
+    "Warm": "Warm / Talking",
+    "Appt": "Appointment Set",
+    "Contract": "Listed / Under Contract",
+    "Closed": "Closed / Sold",
+    "Cold": "Warm / Talking",
+}
+DETAIL_TO_ANALYTICS = {
+    "🔥 Hot / New (call today)": "New/Hot",
+    "Warm / Talking": "Warm",
+    "Nurture / Call Back": "Warm",
+    "Not Interested / Keeping": "Warm",
+    "Appointment Set": "Appt",
+    "Listed / Under Contract": "Contract",
+    "Closed / Sold": "Closed",
+    "Archived": "Closed",
+}
+CLOSED_DETAIL_STAGES = {"Closed / Sold", "Archived"}
 HEAT_WINDOW_DAYS = 60
 
 STATUS_TO_PIPELINE = {
@@ -649,7 +679,10 @@ def apply_heat_classification(lead: dict) -> dict:
         lead["death_date_iso"] = death_dt.strftime("%Y-%m-%d")
         lead["days_since_death"] = days
     status, pipeline = classify_heat_status(days)
-    active_progress = lead.get("pipeline_stage") in ("Appt", "Contract", "Closed")
+    active_progress = lead.get("pipeline_stage") in (
+        "Appt", "Contract", "Closed",
+        "Appointment Set", "Listed / Under Contract", "Closed / Sold", "Archived",
+    )
     contacted = lead.get("status") in ("Contacted", ASSIGN_STATUS) or lead.get("calls", 0) > 0
     if not active_progress and not contacted:
         lead["status"] = status
@@ -860,8 +893,17 @@ def add_note(lead_id: str, text: str, author: str = "Scott") -> None:
         persist_leads()
 
 
+def detail_pipeline_stage(lead: dict) -> str:
+    stage = lead.get("pipeline_stage", "")
+    if stage in DETAIL_PIPELINE_STAGES:
+        return stage
+    return LEGACY_TO_DETAIL.get(stage, DETAIL_PIPELINE_STAGES[0])
+
+
 def effective_pipeline_stage(lead: dict) -> str:
     stage = lead.get("pipeline_stage", "")
+    if stage in DETAIL_TO_ANALYTICS:
+        return DETAIL_TO_ANALYTICS[stage]
     if stage in PIPELINE_STAGES:
         return stage
     if stage == "Cold":
@@ -1831,7 +1873,7 @@ with tab3:
         today = datetime.now().strftime("%Y-%m-%d")
         due_leads = [
             l for l in st.session_state.leads
-            if l.get("follow_up_iso", "9999") <= today and l.get("pipeline_stage") != "Closed"
+            if l.get("follow_up_iso", "9999") <= today and effective_pipeline_stage(l) != "Closed"
         ]
         due_leads.sort(key=lambda x: x.get("follow_up_iso", ""))
         if not due_leads:
@@ -1849,7 +1891,7 @@ with tab3:
                     st.rerun()
                 if st.button("Log Call + Move to Warm", key=f"schedcall_{lead['id']}"):
                     log_call(lead["id"])
-                    update_lead(lead["id"], pipeline_stage="Warm", status="Contacted")
+                    update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
                     st.rerun()
 
     with dash_tab1:
@@ -1867,7 +1909,7 @@ with tab3:
 
         filtered = st.session_state.leads
         if pipe_filter != "All":
-            filtered = [l for l in filtered if l.get("pipeline_stage") == pipe_filter]
+            filtered = [l for l in filtered if effective_pipeline_stage(l) == pipe_filter]
         if branton_filter == f"Assigned to {PARTNER_NAME}":
             filtered = [l for l in filtered if l.get("assigned_to_branton")]
         elif branton_filter == "Unassigned":
@@ -1911,20 +1953,19 @@ with tab3:
                 if not lead:
                     st.info("Select a lead from the list.")
                 else:
-                    e1, e2, e3, e4 = st.columns(4)
+                    e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
+                    current_stage = detail_pipeline_stage(lead)
                     with e1:
                         new_stage = st.selectbox(
                             "Pipeline Stage",
-                            PIPELINE_STAGES,
-                            index=PIPELINE_STAGES.index(
-                                lead.get("pipeline_stage", "New/Hot")
-                                if lead.get("pipeline_stage") in PIPELINE_STAGES else "Warm"
-                            ),
+                            DETAIL_PIPELINE_STAGES,
+                            index=DETAIL_PIPELINE_STAGES.index(current_stage),
                             key=f"stage_{lead['id']}",
                         )
                     with e2:
+                        fu_label = "Next Follow-up Date" if new_stage == NURTURE_STAGE else "Follow-Up"
                         new_fu = st.date_input(
-                            "Follow-Up",
+                            fu_label,
                             value=datetime.strptime(lead.get("follow_up_iso", follow_up_iso()), "%Y-%m-%d").date(),
                             key=f"fu_{lead['id']}",
                         )
@@ -1957,7 +1998,7 @@ with tab3:
                                 pipeline_stage=new_stage,
                                 follow_up_iso=new_fu.strftime("%Y-%m-%d"),
                                 assigned_to_branton=branton_toggle,
-                                status="Closed" if new_stage == "Closed" else lead.get("status", "New"),
+                                status="Closed" if new_stage in CLOSED_DETAIL_STAGES else lead.get("status", "New"),
                             )
                             if note_text.strip():
                                 add_note(lead["id"], note_text, author=PARTNER_NAME if branton_toggle else "Scott")
@@ -1971,7 +2012,7 @@ with tab3:
                     with b3:
                         if st.button("⬆️ → Warm", key=f"warm_{lead['id']}", use_container_width=True):
                             _flush_dash_notes(lead["id"])
-                            update_lead(lead["id"], pipeline_stage="Warm", status="Contacted")
+                            update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
                             st.rerun()
                     with b4:
                         if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
