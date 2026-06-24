@@ -178,75 +178,190 @@ def save_leads(leads: list) -> None:
         json.dump(leads, f, indent=2)
 
 
+def persist_leads() -> list:
+    """Save to disk and reload session — keeps sidebar + analytics in sync."""
+    save_leads(st.session_state.leads)
+    st.session_state.leads = load_leads()
+    return st.session_state.leads
+
+
+def sync_leads_session() -> list:
+    """Merge disk + session so metrics always reflect all saved leads."""
+    disk_leads = load_leads()
+    session_leads = st.session_state.get("leads", [])
+    if len(disk_leads) > len(session_leads):
+        st.session_state.leads = disk_leads
+    elif session_leads:
+        st.session_state.leads = session_leads
+    else:
+        st.session_state.leads = disk_leads
+    return st.session_state.leads
+
+
+VENDOR_SLOTS = 4
+
 VENDOR_CATEGORIES = [
     "Probate Attorney",
-    "Estate Sale",
-    "Contents Removal / Dump Truck",
+    "Title Company",
+    "CPA / Tax Professional (stepped-up basis, capital gains)",
+    "Insurance Guidance for vacant homes",
+    "Property Maintenance / Lawn Care / Security Checks",
+    "Property Management / Rental Option",
+    "Deep Cleaning & Staging",
+    "Estate Sale Companies",
+    "Junk Removal / Dumpster Rental",
     "Movers",
-    "Cleaning",
-    "Sentimental Item Shipping",
-    "Repairs / Funded Repairs",
-    "Express Offers",
+    "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
+    "Cash Buyers / Investor Option",
+    "Traditional Listing Agent",
+    "Buyout / Heir Mediation Services",
 ]
 
+VENDOR_LEGACY_ALIASES = {
+    "Estate Sale": "Estate Sale Companies",
+    "Contents Removal / Dump Truck": "Junk Removal / Dumpster Rental",
+    "Cleaning": "Deep Cleaning & Staging",
+    "Repairs / Funded Repairs": "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
+    "Express Offers": "Cash Buyers / Investor Option",
+    "Sentimental Item Shipping": "Movers",
+}
 
-def _vendor_slot(primary: str = "") -> dict:
-    return {
-        "vendor_1": primary or "[Name] · [Contact] · [Phone]",
-        "vendor_2": "",
-        "vendor_3": "",
-        "area_notes": "",
+VENDOR_LEGACY_IMPORT = {
+    "Estate Sale": "Estate Sale Companies",
+    "Contents Removal / Dump Truck": "Junk Removal / Dumpster Rental",
+    "Cleaning": "Deep Cleaning & Staging",
+    "Repairs / Funded Repairs": "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
+    "Repairs": "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring",
+    "Express Offers": "Cash Buyers / Investor Option",
+    "Sentimental Item Shipping": "Movers",
+}
+
+
+def _empty_vendor_contact() -> dict:
+    return {"name": "", "phone": "", "notes": ""}
+
+
+def _vendor_contact(name: str = "", phone: str = "", notes: str = "") -> dict:
+    return {"name": name, "phone": phone, "notes": notes}
+
+
+def _coerce_vendor_contact(raw) -> dict:
+    if isinstance(raw, dict) and ("name" in raw or "phone" in raw or "notes" in raw):
+        return {
+            "name": (raw.get("name") or "").strip(),
+            "phone": (raw.get("phone") or "").strip(),
+            "notes": (raw.get("notes") or "").strip(),
+        }
+    if isinstance(raw, str) and raw.strip():
+        return {"name": raw.strip(), "phone": "", "notes": ""}
+    return _empty_vendor_contact()
+
+
+def _vendor_slot(**primary) -> dict:
+    slot = {
+        "area_notes": primary.pop("area_notes", ""),
     }
+    for i in range(1, VENDOR_SLOTS + 1):
+        slot[f"vendor_{i}"] = primary.get(f"vendor_{i}", _empty_vendor_contact())
+    return slot
 
 
 DEFAULT_VENDORS = {
-    "Probate Attorney": _vendor_slot("[Attorney Name] · [Firm] · [Phone]"),
-    "Estate Sale": _vendor_slot("[Company Name] · [Contact] · [Phone]"),
-    "Contents Removal / Dump Truck": _vendor_slot("[Haul-Off Service] · [Contact] · [Phone]"),
-    "Movers": _vendor_slot("[Company Name] · [Contact] · [Phone]"),
-    "Cleaning": _vendor_slot("[Cleaning Service] · [Contact] · [Phone]"),
-    "Sentimental Item Shipping": _vendor_slot("[Packing & Shipping Service] · [Contact] · [Phone]"),
-    "Repairs / Funded Repairs": _vendor_slot("[Contractor / Funded Repairs Partner] · [Phone]"),
-    "Express Offers": _vendor_slot(
-        "eXp Express Offers Network · Multiple vetted cash buyers · Scott Hardesty 615-953-0758"
+    "Probate Attorney": _vendor_slot(
+        vendor_1=_vendor_contact("[Attorney Name]", "[Phone]", "good with heirs"),
+    ),
+    "Title Company": _vendor_slot(),
+    "CPA / Tax Professional (stepped-up basis, capital gains)": _vendor_slot(
+        vendor_1=_vendor_contact("[CPA Name]", "[Phone]", "stepped-up basis · capital gains"),
+    ),
+    "Insurance Guidance for vacant homes": _vendor_slot(
+        vendor_1=_vendor_contact("[Insurance Contact]", "[Phone]", "vacant home specialist"),
+    ),
+    "Property Maintenance / Lawn Care / Security Checks": _vendor_slot(
+        vendor_1=_vendor_contact("[Lawn / Security]", "[Phone]", "vacant home checks"),
+    ),
+    "Property Management / Rental Option": _vendor_slot(),
+    "Deep Cleaning & Staging": _vendor_slot(
+        vendor_1=_vendor_contact("[Cleaning Co]", "[Phone]", "estate deep clean"),
+    ),
+    "Estate Sale Companies": _vendor_slot(
+        vendor_1=_vendor_contact("[Estate Sale Co]", "[Phone]", "fast response"),
+    ),
+    "Junk Removal / Dumpster Rental": _vendor_slot(
+        vendor_1=_vendor_contact("[Haul-Off Service]", "[Phone]", "dumpster rental"),
+    ),
+    "Movers": _vendor_slot(
+        vendor_1=_vendor_contact("[Mover]", "[Phone]", "estate moves"),
+    ),
+    "General Contractors / Handyman / Repairs / Roofers / HVAC / Painters / Flooring": _vendor_slot(
+        vendor_1=_vendor_contact("[Contractor]", "[Phone]", "funded repairs partner"),
+    ),
+    "Cash Buyers / Investor Option": _vendor_slot(
+        vendor_1=_vendor_contact(
+            "eXp Express Offers Network",
+            "615-953-0758",
+            "multiple vetted cash buyers",
+        ),
+    ),
+    "Traditional Listing Agent": _vendor_slot(),
+    "Buyout / Heir Mediation Services": _vendor_slot(
+        vendor_1=_vendor_contact("[Mediator]", "[Phone]", "sibling buyout specialist"),
     ),
 }
 
 
 def migrate_vendors(raw: dict) -> dict:
-    if "Repairs" in raw and "Repairs / Funded Repairs" not in raw:
-        raw["Repairs / Funded Repairs"] = raw.pop("Repairs")
+    expanded = dict(raw or {})
+    for old_key, new_key in VENDOR_LEGACY_IMPORT.items():
+        if old_key in expanded and new_key not in expanded:
+            expanded[new_key] = expanded[old_key]
 
     migrated = {}
     for category in VENDOR_CATEGORIES:
-        val = raw.get(category)
+        val = expanded.get(category)
         if isinstance(val, str):
-            migrated[category] = _vendor_slot(val)
+            migrated[category] = _vendor_slot(
+                vendor_1=_vendor_contact(val, "", ""),
+            )
         elif isinstance(val, dict):
-            migrated[category] = {
-                "vendor_1": val.get("vendor_1", ""),
-                "vendor_2": val.get("vendor_2", ""),
-                "vendor_3": val.get("vendor_3", ""),
-                "area_notes": val.get("area_notes", ""),
-            }
+            entry = {"area_notes": val.get("area_notes", "")}
+            for i in range(1, VENDOR_SLOTS + 1):
+                entry[f"vendor_{i}"] = _coerce_vendor_contact(val.get(f"vendor_{i}", ""))
+            migrated[category] = entry
         else:
-            migrated[category] = dict(DEFAULT_VENDORS[category])
+            migrated[category] = {
+                "area_notes": DEFAULT_VENDORS[category].get("area_notes", ""),
+            }
+            for i in range(1, VENDOR_SLOTS + 1):
+                migrated[category][f"vendor_{i}"] = dict(
+                    DEFAULT_VENDORS[category].get(f"vendor_{i}", _empty_vendor_contact())
+                )
     return migrated
 
 
+def _format_vendor_contact(contact: dict, idx: int) -> str:
+    contact = _coerce_vendor_contact(contact)
+    parts = [contact["name"], contact["phone"], contact["notes"]]
+    parts = [p for p in parts if p]
+    if not parts:
+        return ""
+    return f"V{idx}: " + " · ".join(parts)
+
+
 def format_vendors_display(vendors: dict, category: str) -> str:
-    entry = vendors.get(category, {})
+    resolved = VENDOR_LEGACY_ALIASES.get(category, category)
+    entry = vendors.get(resolved, {})
     if isinstance(entry, str):
         return entry or "[TBD]"
 
     lines = []
-    for i in range(1, 4):
-        name = entry.get(f"vendor_{i}", "").strip()
-        if name:
-            lines.append(f"V{i}: {name}")
+    for i in range(1, VENDOR_SLOTS + 1):
+        line = _format_vendor_contact(entry.get(f"vendor_{i}", ""), i)
+        if line:
+            lines.append(line)
     notes = entry.get("area_notes", "").strip()
     if notes:
-        lines.append(f"Notes: {notes}")
+        lines.append(f"Area: {notes}")
     return " · ".join(lines) if lines else "[TBD]"
 
 
@@ -472,8 +587,13 @@ def score_lead(parsed: dict) -> tuple:
     return score, status, flags
 
 
+_lead_id_seq = 0
+
+
 def new_lead_id() -> str:
-    return datetime.now().strftime("%Y%m%d%H%M%S")
+    global _lead_id_seq
+    _lead_id_seq += 1
+    return datetime.now().strftime("%Y%m%d%H%M%S") + f"{_lead_id_seq:04d}"
 
 
 def follow_up_date(days: int = 3) -> str:
@@ -568,9 +688,20 @@ def add_note(lead_id: str, text: str, author: str = "Scott") -> None:
         save_leads(st.session_state.leads)
 
 
+def effective_pipeline_stage(lead: dict) -> str:
+    stage = lead.get("pipeline_stage", "")
+    if stage in PIPELINE_STAGES:
+        return stage
+    if stage == "Cold":
+        return "Warm"
+    return STATUS_TO_PIPELINE.get(lead.get("status", "Warm"), "Warm")
+
+
 def compute_analytics(leads: list) -> dict:
     total = len(leads)
-    stages = {s: sum(1 for l in leads if l.get("pipeline_stage") == s) for s in PIPELINE_STAGES}
+    stages = {s: 0 for s in PIPELINE_STAGES}
+    for lead in leads:
+        stages[effective_pipeline_stage(lead)] = stages.get(effective_pipeline_stage(lead), 0) + 1
     total_calls = sum(l.get("calls", 0) for l in leads)
     branton_count = sum(1 for l in leads if l.get("assigned_to_branton"))
     today = datetime.now().strftime("%Y-%m-%d")
@@ -634,7 +765,7 @@ def import_leads_from_text(text: str, source: str = "import") -> int:
             notes=initial_notes_from_block(block),
         ))
         count += 1
-    save_leads(st.session_state.leads)
+    persist_leads()
     return count
 
 
@@ -660,7 +791,7 @@ def import_leads_from_csv(file_bytes: bytes, source: str = "csv") -> int:
             notes=initial_notes_from_block(row_blob, source="CSV Import"),
         ))
         count += 1
-    save_leads(st.session_state.leads)
+    persist_leads()
     return count
 
 
@@ -1208,6 +1339,8 @@ Schedule a complimentary **10–15 minute call** — phone or in-person at the p
 if "leads" not in st.session_state:
     st.session_state.leads = load_leads()
     save_leads(st.session_state.leads)
+else:
+    sync_leads_session()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1308,7 +1441,7 @@ with tab1:
                 notes=initial_notes_from_block(raw_lead, source="Lead Workflow"),
             )
             st.session_state.leads.insert(0, lead_entry)
-            save_leads(st.session_state.leads)
+            persist_leads()
             st.success(
                 f"🎯 **Assigned to {PARTNER_NAME}!** · {parsed['decedent']} · {parsed['address']} · "
                 f"Follow-up: **{lead_entry['follow_up']}**"
@@ -1317,6 +1450,7 @@ with tab1:
                 f"{PARTNER_NAME} has been notified. Lead is live on the Dashboard. "
                 "Next step: Generate outreach script and schedule first contact within 24 hours."
             )
+            st.rerun()
 
     st.markdown("---")
     st.subheader("⚖️ Attorney Outreach")
@@ -1393,6 +1527,10 @@ with tab2:
     st.subheader("Bulk Qualifier")
     st.caption("Paste raw county export data — petitions, heir info, addresses. We'll parse and qualify.")
 
+    bulk_flash = st.session_state.pop("bulk_qualify_flash", None)
+    if bulk_flash:
+        st.success(bulk_flash)
+
     bulk_raw = st.text_area(
         "Raw County Data",
         height=280,
@@ -1433,21 +1571,12 @@ with tab2:
                         notes=initial_notes_from_block(block, source="Bulk Qualifier"),
                     ))
 
-            save_leads(st.session_state.leads)
-            st.success(f"✅ Analysis complete — **{qualified_count} of {len(blocks)}** leads qualified and added to Dashboard.")
-
-            for block in blocks:
-                parsed = parse_lead(block)
-                score, status, flags = score_lead(parsed)
-                icon = "🟢" if status == "Qualified" else "🟡" if status == "Needs Review" else "🔴"
-                heat_label = ""
-                if status == "Qualified":
-                    hs, hp = heat_from_import_block(block)
-                    heat_label = f" · **{hs}** ({hp})"
-                st.markdown(
-                    f"{icon} **{parsed['decedent']}** · {parsed['address']} · "
-                    f"Score: {score}/100 · **{status}**{heat_label} · {', '.join(flags)}"
-                )
+            persist_leads()
+            st.session_state.bulk_qualify_flash = (
+                f"✅ Analysis complete — **{qualified_count} of {len(blocks)}** leads qualified "
+                f"and synced to Dashboard · **{len(st.session_state.leads)}** total leads."
+            )
+            st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — Dashboard / CRM
@@ -1539,6 +1668,7 @@ with tab3:
             if st.button("Import Pasted Leads", use_container_width=True, type="primary"):
                 if import_text.strip():
                     n = import_leads_from_text(import_text, source="paste")
+                    sync_leads_session()
                     st.success(f"✅ Imported {n} leads.")
                     st.rerun()
                 else:
@@ -1813,38 +1943,54 @@ with tab4:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab5:
     st.subheader("🛠️ Vendors Rolodex")
-    st.caption("Up to 3 vendors per category + area notes. Auto-populates in every Guardian Kit.")
+    st.caption(
+        "Up to 4 vendors per category — name, phone, and quick notes "
+        '(e.g. "good with heirs", "fast response", "vacant home specialist"). '
+        "Auto-populates in every Guardian Kit."
+    )
 
     for category in VENDOR_CATEGORIES:
         entry = st.session_state.vendors.get(category, _vendor_slot())
         with st.expander(f"**{category}**", expanded=False):
-            c1, c2 = st.columns(2)
-            with c1:
-                entry["vendor_1"] = st.text_input(
-                    "Vendor 1",
-                    value=entry.get("vendor_1", ""),
-                    key=f"v1_{category}",
-                )
-                entry["vendor_2"] = st.text_input(
-                    "Vendor 2",
-                    value=entry.get("vendor_2", ""),
-                    key=f"v2_{category}",
-                )
-            with c2:
-                entry["vendor_3"] = st.text_input(
-                    "Vendor 3",
-                    value=entry.get("vendor_3", ""),
-                    key=f"v3_{category}",
-                )
-                entry["area_notes"] = st.text_input(
-                    "Area Notes",
-                    value=entry.get("area_notes", ""),
-                    placeholder="e.g., Wilson County preferred · Mount Juliet area",
-                    key=f"notes_{category}",
-                )
+            for slot in range(1, VENDOR_SLOTS + 1):
+                contact = _coerce_vendor_contact(entry.get(f"vendor_{slot}", ""))
+                st.markdown(f"**Vendor {slot}**")
+                n1, n2, n3 = st.columns([2, 1, 2])
+                with n1:
+                    contact["name"] = st.text_input(
+                        "Name",
+                        value=contact.get("name", ""),
+                        placeholder="Company or contact name",
+                        key=f"vname_{slot}_{category}",
+                        label_visibility="collapsed",
+                    )
+                with n2:
+                    contact["phone"] = st.text_input(
+                        "Phone",
+                        value=contact.get("phone", ""),
+                        placeholder="Phone",
+                        key=f"vphone_{slot}_{category}",
+                        label_visibility="collapsed",
+                    )
+                with n3:
+                    contact["notes"] = st.text_input(
+                        "Notes",
+                        value=contact.get("notes", ""),
+                        placeholder='e.g. good with heirs · fast response',
+                        key=f"vnotes_{slot}_{category}",
+                        label_visibility="collapsed",
+                    )
+                entry[f"vendor_{slot}"] = contact
+            entry["area_notes"] = st.text_input(
+                "Category area notes",
+                value=entry.get("area_notes", ""),
+                placeholder="e.g., Wilson County preferred · Mount Juliet area",
+                key=f"area_{category}",
+            )
         st.session_state.vendors[category] = entry
 
     if st.button("💾 Save Vendors", use_container_width=True, type="primary"):
+        st.session_state.vendors = migrate_vendors(st.session_state.vendors)
         st.success("✅ Vendor Rolodex saved — all Guardian Kits will reflect these contacts.")
 
 # ══════════════════════════════════════════════════════════════════════════════
