@@ -150,12 +150,48 @@ st.markdown(
         color: #e6edf3 !important;
         border: 1px solid #30363d !important;
     }
-    .crm-due-today-marker { display: none; }
-    .crm-due-today-marker + div[data-testid="stButton"] > button {
+    .crm-top-filters-start { display: none; }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] {
+        align-items: stretch !important;
+        margin-bottom: 0.25rem !important;
+    }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="column"] {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: flex-end !important;
+    }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="stVerticalBlock"] {
+        width: 100% !important;
+        justify-content: flex-end !important;
+    }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] {
+        width: 100% !important;
+    }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
+        width: 100% !important;
+        min-height: 2.75rem !important;
+        height: 2.75rem !important;
+        padding: 0.5rem 1rem !important;
+        margin: 0 !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(1) [data-testid="stButton"] > button {
         background: linear-gradient(135deg, #d29922, #f0b429) !important;
         color: #0d1117 !important;
         font-weight: 700 !important;
         box-shadow: 0 4px 14px rgba(240, 180, 41, 0.45) !important;
+    }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="column"]:nth-child(2) [data-testid="stButton"] > button {
+        background: linear-gradient(135deg, #30363d, #484f58) !important;
+        color: #f0f6fc !important;
+        font-weight: 600 !important;
+        box-shadow: none !important;
+    }
+    .crm-top-filters-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button:hover {
+        transform: none !important;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
     }
     </style>
     """,
@@ -1857,15 +1893,15 @@ with tab3:
     st.session_state.setdefault("crm_list_mode", "all")
     st.session_state.setdefault("crm_stage_list_filter", "All")
 
-    due_col, all_col, _ = st.columns([1, 1, 4])
+    st.markdown('<div class="crm-top-filters-start"></div>', unsafe_allow_html=True)
+    due_col, all_col, _ = st.columns([1, 1, 3], gap="small")
     with due_col:
-        st.markdown('<div class="crm-due-today-marker"></div>', unsafe_allow_html=True)
         if st.button("📅 Due Today", key="crm_due_today_btn", use_container_width=True, type="primary"):
             st.session_state.crm_list_mode = "due_today"
             st.session_state.crm_stage_list_filter = "All"
             st.rerun()
     with all_col:
-        if st.button("All Leads", key="crm_all_leads_btn", use_container_width=True):
+        if st.button("All Leads", key="crm_all_leads_btn", use_container_width=True, type="secondary"):
             st.session_state.crm_list_mode = "all"
             st.session_state.crm_stage_list_filter = "All"
             st.rerun()
