@@ -98,6 +98,7 @@ st.markdown(
         resize: vertical !important;
         color: #e6edf3 !important;
     }
+
     .pipe-appt { color: #d29922; font-weight: 600; }
     .pipe-contract { color: #a371f7; font-weight: 600; }
     .pipe-closed { color: #3fb950; font-weight: 600; }
@@ -606,6 +607,32 @@ def set_lead_notes_full_text(lead_id: str, text: str, author: str = None) -> Non
 def _on_dash_notes_saved(lead_id: str, widget_key: str) -> None:
     if lead_id:
         set_lead_notes_full_text(lead_id, st.session_state.get(widget_key, ""))
+
+
+def _flush_dash_notes(lead_id: str) -> None:
+    """Persist the notes text area for a lead before switching to another."""
+    if not lead_id:
+        return
+    widget_key = f"dash_notes_{lead_id}"
+    if widget_key in st.session_state:
+        set_lead_notes_full_text(lead_id, st.session_state.get(widget_key, ""))
+
+
+def _lead_list_button_label(lead: dict) -> str:
+    name = lead.get("decedent", "Unknown")
+    addr = (lead.get("address") or "—")[:48]
+    phone = lead.get("phone") or "—"
+    score = lead.get("score", 0)
+    status = lead.get("status", "—")
+    return f"{name}\n{addr}\n📞 {phone}  ·  [{score}]  ·  {status}"
+
+
+def _select_crm_lead(lead_id: str) -> None:
+    prev = st.session_state.get("crm_selected_lead_id")
+    if prev and prev != lead_id:
+        _flush_dash_notes(prev)
+    st.session_state.crm_selected_lead_id = lead_id
+    st.session_state.pop("_dash_notes_sync_id", None)
 
 
 def apply_heat_classification(lead: dict) -> dict:
@@ -1912,104 +1939,132 @@ with tab3:
         if not filtered:
             st.info("No leads match filters. Import via **Import Leads** tab or use Lead Workflow.")
         else:
-            table_rows = [{
-                "Decedent": l.get("decedent", ""),
-                "Address": l.get("address", ""),
-                "County": l.get("county", ""),
-                "Pipeline": l.get("pipeline_stage", "New/Hot"),
-                "Calls": l.get("calls", 0),
-                "Branton": "✓" if l.get("assigned_to_branton") else "—",
-                "Follow-Up": l.get("follow_up_iso", ""),
-                "Phone": l.get("phone", ""),
-            } for l in filtered]
-            st.dataframe(table_rows, use_container_width=True, hide_index=True)
+            filtered_ids = {l["id"] for l in filtered}
+            if st.session_state.get("crm_selected_lead_id") not in filtered_ids:
+                _flush_dash_notes(st.session_state.get("crm_selected_lead_id"))
+                st.session_state.crm_selected_lead_id = filtered[0]["id"]
+                st.session_state.pop("_dash_notes_sync_id", None)
 
-            st.markdown("#### Lead Detail & Edit")
-            lead_labels = {
-                l["id"]: f"{l.get('decedent', 'Unknown')} — {l.get('pipeline_stage', 'New/Hot')}"
-                for l in filtered
-            }
-            selected_id = st.selectbox("Select lead", list(lead_labels.keys()), format_func=lambda x: lead_labels[x], key="crm_select_lead")
+            list_col, detail_col = st.columns([2, 3], gap="medium")
+
+            with list_col:
+                st.markdown("**Leads**")
+                with st.container(height=520):
+                    for item in filtered:
+                        is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
+                        if st.button(
+                            _lead_list_button_label(item),
+                            key=f"pick_{item['id']}",
+                            use_container_width=True,
+                            type="primary" if is_selected else "secondary",
+                        ):
+                            _select_crm_lead(item["id"])
+                            st.rerun()
+
+            selected_id = st.session_state.get("crm_selected_lead_id")
             lead = find_lead(selected_id)
 
-            if lead:
-                e1, e2, e3, e4 = st.columns(4)
-                with e1:
-                    new_stage = st.selectbox(
-                        "Pipeline Stage",
-                        PIPELINE_STAGES,
-                        index=PIPELINE_STAGES.index(
-                            lead.get("pipeline_stage", "New/Hot")
-                            if lead.get("pipeline_stage") in PIPELINE_STAGES else "Warm"
-                        ),
-                        key=f"stage_{lead['id']}",
-                    )
-                with e2:
-                    new_fu = st.date_input(
-                        "Follow-Up",
-                        value=datetime.strptime(lead.get("follow_up_iso", follow_up_iso()), "%Y-%m-%d").date(),
-                        key=f"fu_{lead['id']}",
-                    )
-                with e3:
-                    branton_toggle = st.toggle(
-                        f"Assign to {PARTNER_NAME}",
-                        value=bool(lead.get("assigned_to_branton")),
-                        key=f"branton_{lead['id']}",
-                    )
-                with e4:
-                    st.metric("Calls", lead.get("calls", 0))
+            with detail_col:
+                st.markdown("#### Lead Detail & Edit")
 
-                note_text = st.text_area("Add Note", key=f"note_{lead['id']}", placeholder="Call outcome, heir feedback, next steps...")
-                b1, b2, b3, b4 = st.columns(4)
-                with b1:
-                    if st.button("💾 Save Changes", key=f"save_{lead['id']}", use_container_width=True, type="primary"):
-                        update_lead(
-                            lead["id"],
-                            pipeline_stage=new_stage,
-                            follow_up_iso=new_fu.strftime("%Y-%m-%d"),
-                            assigned_to_branton=branton_toggle,
-                            status="Closed" if new_stage == "Closed" else lead.get("status", "New"),
+                if not lead:
+                    st.info("Select a lead from the list.")
+                else:
+                    e1, e2, e3, e4 = st.columns(4)
+                    with e1:
+                        new_stage = st.selectbox(
+                            "Pipeline Stage",
+                            PIPELINE_STAGES,
+                            index=PIPELINE_STAGES.index(
+                                lead.get("pipeline_stage", "New/Hot")
+                                if lead.get("pipeline_stage") in PIPELINE_STAGES else "Warm"
+                            ),
+                            key=f"stage_{lead['id']}",
                         )
-                        if note_text.strip():
-                            add_note(lead["id"], note_text, author=PARTNER_NAME if branton_toggle else "Scott")
-                        st.rerun()
-                with b2:
-                    if st.button("📞 Log Call", key=f"call_{lead['id']}", use_container_width=True):
-                        log_call(lead["id"])
-                        st.rerun()
-                with b3:
-                    if st.button("⬆️ → Warm", key=f"warm_{lead['id']}", use_container_width=True):
-                        update_lead(lead["id"], pipeline_stage="Warm", status="Contacted")
-                        st.rerun()
-                with b4:
-                    if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
-                        st.session_state.leads = [l for l in st.session_state.leads if l["id"] != lead["id"]]
-                        persist_leads()
-                        st.rerun()
+                    with e2:
+                        new_fu = st.date_input(
+                            "Follow-Up",
+                            value=datetime.strptime(lead.get("follow_up_iso", follow_up_iso()), "%Y-%m-%d").date(),
+                            key=f"fu_{lead['id']}",
+                        )
+                    with e3:
+                        branton_toggle = st.toggle(
+                            f"Assign to {PARTNER_NAME}",
+                            value=bool(lead.get("assigned_to_branton")),
+                            key=f"branton_{lead['id']}",
+                        )
+                    with e4:
+                        st.metric("Calls", lead.get("calls", 0))
 
-                st.markdown("**Notes**")
-                notes_widget_key = f"dash_notes_{lead['id']}"
-                if notes_widget_key not in st.session_state:
-                    st.session_state[notes_widget_key] = get_lead_notes_full_text(lead)
-                st.markdown('<div class="dash-notes-marker"></div>', unsafe_allow_html=True)
-                st.text_area(
-                    "Full lead notes",
-                    height=220,
-                    key=notes_widget_key,
-                    label_visibility="collapsed",
-                    on_change=_on_dash_notes_saved,
-                    args=(lead["id"], notes_widget_key),
-                )
-                if lead.get("days_since_death") is not None:
                     st.caption(
-                        f"Death ~{lead.get('days_since_death')} days ago · "
-                        f"Status: **{lead.get('status', '—')}** · Pipeline: **{lead.get('pipeline_stage', '—')}**"
+                        f"**{lead.get('decedent', 'Unknown')}** · {lead.get('address', '—')} · "
+                        f"📞 {lead.get('phone') or '—'} · Score **{lead.get('score', 0)}** · "
+                        f"{lead.get('county', '—')}"
                     )
 
-                if lead.get("activity"):
-                    st.markdown("**Activity**")
-                    for act in lead["activity"][:5]:
-                        st.caption(f"{act.get('ts', '')[:16]} · {act.get('type', '')} · {act.get('detail', '')}")
+                    note_text = st.text_area(
+                        "Add Note",
+                        key=f"note_{lead['id']}",
+                        placeholder="Call outcome, heir feedback, next steps...",
+                    )
+                    b1, b2, b3, b4 = st.columns(4)
+                    with b1:
+                        if st.button("💾 Save Changes", key=f"save_{lead['id']}", use_container_width=True, type="primary"):
+                            _flush_dash_notes(lead["id"])
+                            update_lead(
+                                lead["id"],
+                                pipeline_stage=new_stage,
+                                follow_up_iso=new_fu.strftime("%Y-%m-%d"),
+                                assigned_to_branton=branton_toggle,
+                                status="Closed" if new_stage == "Closed" else lead.get("status", "New"),
+                            )
+                            if note_text.strip():
+                                add_note(lead["id"], note_text, author=PARTNER_NAME if branton_toggle else "Scott")
+                            st.session_state.pop("_dash_notes_sync_id", None)
+                            st.rerun()
+                    with b2:
+                        if st.button("📞 Log Call", key=f"call_{lead['id']}", use_container_width=True):
+                            _flush_dash_notes(lead["id"])
+                            log_call(lead["id"])
+                            st.rerun()
+                    with b3:
+                        if st.button("⬆️ → Warm", key=f"warm_{lead['id']}", use_container_width=True):
+                            _flush_dash_notes(lead["id"])
+                            update_lead(lead["id"], pipeline_stage="Warm", status="Contacted")
+                            st.rerun()
+                    with b4:
+                        if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
+                            _flush_dash_notes(lead["id"])
+                            st.session_state.leads = [l for l in st.session_state.leads if l["id"] != lead["id"]]
+                            persist_leads()
+                            st.session_state.pop("crm_selected_lead_id", None)
+                            st.session_state.pop("_dash_notes_sync_id", None)
+                            st.rerun()
+
+                    st.markdown("**Notes**")
+                    notes_widget_key = f"dash_notes_{lead['id']}"
+                    if st.session_state.get("_dash_notes_sync_id") != lead["id"]:
+                        st.session_state[notes_widget_key] = get_lead_notes_full_text(lead)
+                        st.session_state["_dash_notes_sync_id"] = lead["id"]
+                    st.markdown('<div class="dash-notes-marker"></div>', unsafe_allow_html=True)
+                    st.text_area(
+                        "Full lead notes",
+                        height=220,
+                        key=notes_widget_key,
+                        label_visibility="collapsed",
+                        on_change=_on_dash_notes_saved,
+                        args=(lead["id"], notes_widget_key),
+                    )
+                    if lead.get("days_since_death") is not None:
+                        st.caption(
+                            f"Death ~{lead.get('days_since_death')} days ago · "
+                            f"Status: **{lead.get('status', '—')}** · Pipeline: **{lead.get('pipeline_stage', '—')}**"
+                        )
+
+                    if lead.get("activity"):
+                        st.markdown("**Activity**")
+                        for act in lead["activity"][:5]:
+                            st.caption(f"{act.get('ts', '')[:16]} · {act.get('type', '')} · {act.get('detail', '')}")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — Partner Kit
