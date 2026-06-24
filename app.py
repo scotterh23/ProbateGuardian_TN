@@ -72,8 +72,10 @@ st.set_page_config(
 )
 
 LEADS_FILE = (Path(__file__).resolve().parent / "leads_data.json")
+VENDORS_FILE = (Path(__file__).resolve().parent / "vendors_data.json")
 GITHUB_REPO = "scotterh23/ProbateGuardian_TN"
 GITHUB_LEADS_PATH = "leads_data.json"
+GITHUB_VENDORS_PATH = "vendors_data.json"
 GITHUB_BRANCH = "main"
 
 # ── Dark theme CSS ─────────────────────────────────────────────────────────────
@@ -317,6 +319,57 @@ def _github_push_leads(leads: list, sha: str = None) -> bool:
         return False
 
 
+def _github_fetch_vendors() -> tuple:
+    """Return (vendors_dict, file_sha) from GitHub, or (None, None) if unavailable."""
+    if not _github_enabled():
+        return None, None
+    url = (
+        f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_VENDORS_PATH}"
+        f"?ref={GITHUB_BRANCH}"
+    )
+    req = urllib.request.Request(url, headers=_github_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        content = base64.b64decode(data["content"]).decode("utf-8")
+        vendors = json.loads(content)
+        if not isinstance(vendors, dict):
+            return {}, data.get("sha")
+        return vendors, data.get("sha")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return {}, None
+        return None, None
+    except Exception:
+        return None, None
+
+
+def _github_push_vendors(vendors: dict, sha: str = None) -> bool:
+    if not _github_enabled():
+        return False
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_VENDORS_PATH}"
+    payload = {
+        "message": "ProbateGuardian CRM: update vendors_data.json",
+        "content": base64.b64encode(json.dumps(vendors, indent=2).encode()).decode(),
+        "branch": GITHUB_BRANCH,
+    }
+    if sha:
+        payload["sha"] = sha
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={**_github_headers(), "Content-Type": "application/json"},
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            data = json.loads(resp.read().decode())
+        st.session_state["_vendors_github_sha"] = data.get("content", {}).get("sha")
+        return True
+    except Exception:
+        return False
+
+
 def _merge_leads_by_id(*lead_lists: list) -> list:
     merged: dict = {}
     for leads in lead_lists:
@@ -397,9 +450,8 @@ def get_leads() -> list:
 
 
 def persist_leads() -> list:
-    """Save session leads to leads_data.json and reload — keeps all views in sync."""
+    """Save session leads to leads_data.json atomically — no destructive reload."""
     save_leads(st.session_state.leads)
-    st.session_state.leads = load_leads()
     return st.session_state.leads
 
 
@@ -562,6 +614,109 @@ def migrate_vendors(raw: dict) -> dict:
     return migrated
 
 
+def _vendors_category_has_user_data(entry: dict) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    if (entry.get("area_notes") or "").strip():
+        return True
+    for i in range(1, VENDOR_SLOTS + 1):
+        contact = _coerce_vendor_contact(entry.get(f"vendor_{i}", ""))
+        name = (contact.get("name") or "").strip()
+        phone = (contact.get("phone") or "").strip()
+        notes = (contact.get("notes") or "").strip()
+        if name and not (name.startswith("[") and name.endswith("]")):
+            return True
+        if phone and not (phone.startswith("[") and phone.endswith("]")):
+            return True
+        if notes:
+            return True
+    return False
+
+
+def _merge_vendors_dict(remote: dict, local: dict) -> dict:
+    remote_m = migrate_vendors(remote or {})
+    local_m = migrate_vendors(local or {})
+    merged = migrate_vendors(dict(DEFAULT_VENDORS))
+    for category in VENDOR_CATEGORIES:
+        local_entry = local_m.get(category, {})
+        remote_entry = remote_m.get(category, {})
+        if _vendors_category_has_user_data(local_entry):
+            merged[category] = local_entry
+        elif _vendors_category_has_user_data(remote_entry):
+            merged[category] = remote_entry
+        else:
+            merged[category] = local_entry or remote_entry
+    return merged
+
+
+def _load_vendors_local() -> dict:
+    if not VENDORS_FILE.exists():
+        return {}
+    try:
+        with open(VENDORS_FILE, "r", encoding="utf-8") as f:
+            vendors = json.load(f)
+        if not isinstance(vendors, dict):
+            return {}
+        return migrate_vendors(vendors)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def _save_vendors_local(vendors: dict) -> None:
+    VENDORS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(VENDORS_FILE, "w", encoding="utf-8") as f:
+        json.dump(vendors, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def load_vendors() -> dict:
+    """Load vendors from vendors_data.json — GitHub repo when token configured, else local file."""
+    local = _load_vendors_local()
+    if not _github_enabled():
+        return local if local else migrate_vendors(dict(DEFAULT_VENDORS))
+
+    remote_raw, sha = _github_fetch_vendors()
+    if remote_raw is None:
+        return local if local else migrate_vendors(dict(DEFAULT_VENDORS))
+
+    if sha:
+        st.session_state["_vendors_github_sha"] = sha
+
+    remote = migrate_vendors(remote_raw)
+    if not local:
+        _save_vendors_local(remote)
+        return remote
+
+    merged = _merge_vendors_dict(remote, local)
+    if merged != local:
+        _save_vendors_local(merged)
+    return merged
+
+
+def save_vendors(vendors: dict) -> None:
+    """Write vendors to vendors_data.json immediately — local disk + GitHub when configured."""
+    vendors = migrate_vendors(vendors or {})
+    _save_vendors_local(vendors)
+
+    if _github_enabled():
+        sha = st.session_state.get("_vendors_github_sha")
+        if not _github_push_vendors(vendors, sha):
+            _, fresh_sha = _github_fetch_vendors()
+            if fresh_sha:
+                st.session_state["_vendors_github_sha"] = fresh_sha
+            _github_push_vendors(vendors, st.session_state.get("_vendors_github_sha"))
+
+
+def get_vendors() -> dict:
+    """Return session vendors, loading from vendors_data.json on first access."""
+    if "vendors" not in st.session_state:
+        st.session_state.vendors = load_vendors()
+    else:
+        st.session_state.vendors = migrate_vendors(st.session_state.vendors)
+    return st.session_state.vendors
+
+
 def _format_vendor_contact(contact: dict, idx: int) -> str:
     contact = _coerce_vendor_contact(contact)
     parts = [contact["name"], contact["phone"], contact["notes"]]
@@ -586,12 +741,6 @@ def format_vendors_display(vendors: dict, category: str) -> str:
     if notes:
         lines.append(f"Area: {notes}")
     return " · ".join(lines) if lines else "[TBD]"
-
-
-if "vendors" not in st.session_state:
-    st.session_state.vendors = migrate_vendors(dict(DEFAULT_VENDORS))
-else:
-    st.session_state.vendors = migrate_vendors(st.session_state.vendors)
 
 
 # ── Death date / heat classification ─────────────────────────────────────────
@@ -1759,8 +1908,9 @@ Schedule a complimentary **10–15 minute call** — phone or in-person at the p
 *Not legal advice · All sales subject to court approval where required · © {year} Scott Hardesty, eXp Realty* 🏠"""
 
 
-# ── Load persisted leads (after all helpers are defined) ─────────────────────
+# ── Load persisted data (after all helpers are defined) ───────────────────────
 get_leads()
+get_vendors()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -2486,6 +2636,7 @@ with tab_vendors:
 
     if st.button("💾 Save Vendors", use_container_width=True, type="primary"):
         st.session_state.vendors = migrate_vendors(st.session_state.vendors)
+        save_vendors(st.session_state.vendors)
         st.success("✅ Vendor Rolodex saved — all Guardian Kits will reflect these contacts.")
 
 # ══════════════════════════════════════════════════════════════════════════════
