@@ -762,16 +762,27 @@ def _apply_crm_list_filters(leads: list) -> list:
     result = list(leads)
     if st.session_state.get("crm_list_mode") == "due_today":
         result = _filter_leads_due_today(result)
-    stage_filter = st.session_state.get("crm_stage_list_filter", "All")
-    if stage_filter and stage_filter != "All":
-        result = [l for l in result if detail_pipeline_stage(l) == stage_filter]
     return result
 
 
-def _on_pipeline_stage_list_filter(lead_id: str) -> None:
+def _sync_top_pipe_filter_from_detail(detail_stage: str) -> None:
+    """Keep top Pipeline dropdown (All / New/Hot / Warm / …) in sync with detail stage."""
+    st.session_state.crm_pipe_filter = DETAIL_TO_ANALYTICS.get(detail_stage, "All")
+
+
+def _on_detail_pipeline_change(lead_id: str) -> None:
+    """Detail Pipeline Stage changed — save lead, sync top filter, refresh list."""
     stage = st.session_state.get(f"stage_{lead_id}")
-    if stage:
-        st.session_state.crm_stage_list_filter = stage
+    if not stage:
+        return
+    set_lead_pipeline_stage_by_id(lead_id, stage)
+    _sync_top_pipe_filter_from_detail(stage)
+    st.session_state.pop("_dash_notes_sync_id", None)
+
+
+def _on_top_pipe_filter_change() -> None:
+    """Top Pipeline filter changed — left list uses crm_pipe_filter on next render."""
+    return
 
 
 def _quick_stage_status(stage: str, lead: dict) -> str:
@@ -815,7 +826,7 @@ def _quick_stage_callback(lead_id: str, stage: str) -> None:
         return
     st.session_state.crm_selected_lead_id = lead_id
     st.session_state[f"stage_{lead_id}"] = stage
-    st.session_state.crm_stage_list_filter = stage
+    _sync_top_pipe_filter_from_detail(stage)
     st.session_state.pop("_dash_notes_sync_id", None)
 
 
@@ -1769,19 +1780,19 @@ st.markdown(
 )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-    "Lead Workflow",
-    "Bulk Qualifier",
+tab_dashboard, tab_add_leads, tab_outreach, tab_partner, tab_vendors, tab_training = st.tabs([
     "Dashboard",
+    "Add New Leads",
+    "Generate Outreach",
     "📘 Partner Kit",
     "🛠️ Vendors Rolodex",
     "🎥 Training",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 1 — Lead Workflow
+# TAB — Generate Outreach (Lead Workflow)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab1:
+with tab_outreach:
     st.subheader("Lead Workflow")
     st.caption("Paste county lead data below, then choose your action.")
 
@@ -1922,9 +1933,9 @@ with tab1:
             )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 2 — Bulk Qualifier
+# TAB — Add New Leads (Bulk Qualifier)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab2:
+with tab_add_leads:
     st.subheader("Bulk Qualifier")
     st.caption("Paste raw county export data — petitions, heir info, addresses. We'll parse and qualify.")
 
@@ -1980,23 +1991,23 @@ with tab2:
             st.rerun()
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 3 — Dashboard / CRM
+# TAB — Dashboard / CRM (default)
 # ══════════════════════════════════════════════════════════════════════════════
-with tab3:
+with tab_dashboard:
     st.session_state.setdefault("crm_list_mode", "all")
-    st.session_state.setdefault("crm_stage_list_filter", "All")
+    st.session_state.setdefault("crm_pipe_filter", "All")
 
     st.markdown('<div class="crm-top-filters-start"></div>', unsafe_allow_html=True)
     due_col, all_col, _ = st.columns([1, 1, 3], gap="small")
     with due_col:
         if st.button("📅 Due Today", key="crm_due_today_btn", use_container_width=True, type="primary"):
             st.session_state.crm_list_mode = "due_today"
-            st.session_state.crm_stage_list_filter = "All"
+            st.session_state.crm_pipe_filter = "All"
             st.rerun()
     with all_col:
         if st.button("All Leads", key="crm_all_leads_btn", use_container_width=True, type="secondary"):
             st.session_state.crm_list_mode = "all"
-            st.session_state.crm_stage_list_filter = "All"
+            st.session_state.crm_pipe_filter = "All"
             st.rerun()
 
     analytics = compute_analytics(get_leads())
@@ -2085,7 +2096,12 @@ with tab3:
     with dash_tab1:
         fc1, fc2, fc3 = st.columns(3)
         with fc1:
-            pipe_filter = st.selectbox("Pipeline", ["All"] + PIPELINE_STAGES, key="crm_pipe_filter")
+            pipe_filter = st.selectbox(
+                "Pipeline",
+                ["All"] + PIPELINE_STAGES,
+                key="crm_pipe_filter",
+                on_change=_on_top_pipe_filter_change,
+            )
         with fc2:
             branton_filter = st.selectbox("Assignment", ["All", f"Assigned to {PARTNER_NAME}", "Unassigned"], key="crm_branton_filter")
         with fc3:
@@ -2109,8 +2125,8 @@ with tab3:
         filter_bits = []
         if st.session_state.get("crm_list_mode") == "due_today":
             filter_bits.append("due today + high-score")
-        if st.session_state.get("crm_stage_list_filter", "All") != "All":
-            filter_bits.append(st.session_state.crm_stage_list_filter)
+        if pipe_filter != "All":
+            filter_bits.append(pipe_filter)
         filter_note = f" · List: **{', '.join(filter_bits)}**" if filter_bits else ""
         st.caption(
             f"Showing **{len(list_filtered)}** in list / **{len(filtered)}** matched / "
@@ -2161,7 +2177,7 @@ with tab3:
                             DETAIL_PIPELINE_STAGES,
                             index=DETAIL_PIPELINE_STAGES.index(current_stage),
                             key=f"stage_{lead['id']}",
-                            on_change=_on_pipeline_stage_list_filter,
+                            on_change=_on_detail_pipeline_change,
                             args=(lead["id"],),
                         )
                     with e2:
@@ -2297,7 +2313,7 @@ with tab3:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — Partner Kit
 # ══════════════════════════════════════════════════════════════════════════════
-with tab4:
+with tab_partner:
     st.subheader("📘 Partner Kit — Branton Walker Partnership")
     st.markdown(
         """
@@ -2402,7 +2418,7 @@ with tab4:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — Vendors Rolodex
 # ══════════════════════════════════════════════════════════════════════════════
-with tab5:
+with tab_vendors:
     st.subheader("🛠️ Vendors Rolodex")
     st.caption(
         "Up to 4 vendors per category — name, phone, and quick notes "
@@ -2457,7 +2473,7 @@ with tab5:
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — Training
 # ══════════════════════════════════════════════════════════════════════════════
-with tab6:
+with tab_training:
     st.subheader("🎥 Training — Elite Probate Playbook")
     st.caption("Aaron Novello · Rick Yen · Jose · Bruce & Heath — study before every call.")
 
