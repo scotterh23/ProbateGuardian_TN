@@ -701,6 +701,27 @@ def _flush_dash_notes(lead_id: str) -> None:
         set_lead_notes_full_text(lead_id, st.session_state.get(widget_key, ""))
 
 
+def _flush_dash_notes_in_memory(lead_id: str) -> None:
+    """Copy notes widget into the one matching lead — no full-list reload."""
+    if not lead_id:
+        return
+    widget_key = f"dash_notes_{lead_id}"
+    if widget_key not in st.session_state:
+        return
+    lead = find_lead(lead_id)
+    if not lead:
+        return
+    cleaned = (st.session_state.get(widget_key, "") or "").strip()
+    if cleaned:
+        lead["notes"] = [{
+            "ts": datetime.now().isoformat(),
+            "text": cleaned,
+            "by": PARTNER_NAME,
+        }]
+    else:
+        lead["notes"] = []
+
+
 def _lead_list_button_label(lead: dict) -> str:
     name = lead.get("decedent", "Unknown")
     addr = (lead.get("address") or "—")[:48]
@@ -766,19 +787,29 @@ def _quick_stage_status(stage: str, lead: dict) -> str:
 
 
 def _quick_stage_callback(lead_id: str, stage: str) -> None:
-    """Runs via on_click before widgets render — safe to update widget session state."""
-    _flush_dash_notes(lead_id)
-    lead = find_lead(lead_id)
-    if not lead:
+    """Update exactly one lead by ID — save to disk without re-normalizing other leads."""
+    if not lead_id or lead_id != st.session_state.get("crm_selected_lead_id"):
         return
-    update_lead(
-        lead_id,
-        pipeline_stage=stage,
-        status=_quick_stage_status(stage, lead),
-    )
+    _flush_dash_notes_in_memory(lead_id)
+    lead = find_lead(lead_id)
+    if not lead or lead.get("id") != lead_id:
+        return
+    lead["pipeline_stage"] = stage
+    lead["status"] = _quick_stage_status(stage, lead)
+    save_leads(st.session_state.leads)
     st.session_state[f"stage_{lead_id}"] = stage
     st.session_state.crm_stage_list_filter = stage
     st.session_state.pop("_dash_notes_sync_id", None)
+
+
+def _is_manual_pipeline_stage(stage: str) -> bool:
+    """Stages set by Branton in Lead Detail — never auto-overwrite on reload."""
+    if stage in DETAIL_PIPELINE_STAGES:
+        return True
+    return stage in (
+        "Appt", "Contract", "Closed",
+        "Appointment Set", "Listed / Under Contract", "Closed / Sold", "Archived",
+    )
 
 
 def apply_heat_classification(lead: dict) -> dict:
@@ -794,6 +825,8 @@ def apply_heat_classification(lead: dict) -> dict:
         days = (datetime.now() - death_dt).days
         lead["death_date_iso"] = death_dt.strftime("%Y-%m-%d")
         lead["days_since_death"] = days
+    if _is_manual_pipeline_stage(lead.get("pipeline_stage", "")):
+        return lead
     status, pipeline = classify_heat_status(days)
     active_progress = lead.get("pipeline_stage") in (
         "Appt", "Contract", "Closed",
@@ -963,22 +996,28 @@ def find_lead(lead_id: str):
 
 
 def update_lead(lead_id: str, **fields) -> None:
+    if not lead_id:
+        return
+    updated = False
     for lead in st.session_state.leads:
-        if lead["id"] == lead_id:
-            lead.update(fields)
-            if fields.get("assigned_to_branton") is True:
-                lead["assigned_to"] = PARTNER_NAME
-                lead["status"] = ASSIGN_STATUS
-            elif fields.get("assigned_to_branton") is False:
-                lead["assigned_to"] = ""
-            if "follow_up_iso" in fields:
-                try:
-                    d = datetime.strptime(fields["follow_up_iso"], "%Y-%m-%d")
-                    lead["follow_up"] = d.strftime("%A, %B %d, %Y")
-                except ValueError:
-                    pass
-            break
-    persist_leads()
+        if lead.get("id") != lead_id:
+            continue
+        lead.update(fields)
+        if fields.get("assigned_to_branton") is True:
+            lead["assigned_to"] = PARTNER_NAME
+            lead["status"] = ASSIGN_STATUS
+        elif fields.get("assigned_to_branton") is False:
+            lead["assigned_to"] = ""
+        if "follow_up_iso" in fields:
+            try:
+                d = datetime.strptime(fields["follow_up_iso"], "%Y-%m-%d")
+                lead["follow_up"] = d.strftime("%A, %B %d, %Y")
+            except ValueError:
+                pass
+        updated = True
+        break
+    if updated:
+        save_leads(st.session_state.leads)
 
 
 def log_call(lead_id: str) -> None:
