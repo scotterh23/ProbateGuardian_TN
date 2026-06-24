@@ -193,6 +193,15 @@ st.markdown(
         transform: none !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
     }
+    .crm-quick-stage-start { display: none; }
+    .crm-quick-stage-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
+        min-height: 3.1rem !important;
+        font-size: 0.88rem !important;
+        font-weight: 600 !important;
+        white-space: normal !important;
+        line-height: 1.25 !important;
+        padding: 0.55rem 0.45rem !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -742,6 +751,33 @@ def _on_pipeline_stage_list_filter(lead_id: str) -> None:
     stage = st.session_state.get(f"stage_{lead_id}")
     if stage:
         st.session_state.crm_stage_list_filter = stage
+
+
+def _quick_stage_status(stage: str, lead: dict) -> str:
+    if stage in CLOSED_DETAIL_STAGES:
+        return "Closed"
+    if stage == "🔥 Hot / New (call today)":
+        return "New/Hot"
+    if stage == "Warm / Talking":
+        return "Contacted"
+    if stage == "Not Interested / Keeping":
+        return "Low Priority"
+    return lead.get("status", "New")
+
+
+def _quick_stage_change(lead_id: str, stage: str) -> None:
+    _flush_dash_notes(lead_id)
+    lead = find_lead(lead_id)
+    if not lead:
+        return
+    update_lead(
+        lead_id,
+        pipeline_stage=stage,
+        status=_quick_stage_status(stage, lead),
+    )
+    st.session_state[f"stage_{lead_id}"] = stage
+    st.session_state.crm_stage_list_filter = stage
+    st.session_state.pop("_dash_notes_sync_id", None)
 
 
 def apply_heat_classification(lead: dict) -> dict:
@@ -2086,6 +2122,29 @@ with tab3:
                         )
                     with e4:
                         st.metric("Calls", lead.get("calls", 0))
+
+                    st.markdown('<div class="crm-quick-stage-start"></div>', unsafe_allow_html=True)
+                    qs1, qs2, qs3, qs4, qs5 = st.columns(5, gap="small")
+                    with qs1:
+                        if st.button("🔥 Move to Hot", key=f"qhot_{lead['id']}", use_container_width=True, type="primary"):
+                            _quick_stage_change(lead["id"], "🔥 Hot / New (call today)")
+                            st.rerun()
+                    with qs2:
+                        if st.button("Move to Warm", key=f"qwarm_{lead['id']}", use_container_width=True):
+                            _quick_stage_change(lead["id"], "Warm / Talking")
+                            st.rerun()
+                    with qs3:
+                        if st.button("Set Appointment", key=f"qappt_{lead['id']}", use_container_width=True):
+                            _quick_stage_change(lead["id"], "Appointment Set")
+                            st.rerun()
+                    with qs4:
+                        if st.button("Not Interested", key=f"qni_{lead['id']}", use_container_width=True):
+                            _quick_stage_change(lead["id"], "Not Interested / Keeping")
+                            st.rerun()
+                    with qs5:
+                        if st.button("Archive", key=f"qarch_{lead['id']}", use_container_width=True):
+                            _quick_stage_change(lead["id"], "Archived")
+                            st.rerun()
 
                     st.caption(
                         f"**{lead.get('decedent', 'Unknown')}** · {lead.get('address', '—')} · "
