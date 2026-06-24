@@ -1,7 +1,11 @@
+import base64
 import csv
 import io
 import json
+import os
 import re
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -36,7 +40,10 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-LEADS_FILE = Path(__file__).parent / "leads_data.json"
+LEADS_FILE = (Path(__file__).resolve().parent / "leads_data.json")
+GITHUB_REPO = "scotterh23/ProbateGuardian_TN"
+GITHUB_LEADS_PATH = "leads_data.json"
+GITHUB_BRANCH = "main"
 
 # ── Dark theme CSS ─────────────────────────────────────────────────────────────
 st.markdown(
@@ -162,52 +169,174 @@ def normalize_lead(lead: dict) -> dict:
     return lead
 
 
-def load_leads() -> list:
-    if LEADS_FILE.exists():
-        try:
-            with open(LEADS_FILE, "r") as f:
-                leads = json.load(f)
-            return [normalize_lead(l) for l in leads]
-        except (json.JSONDecodeError, IOError):
+def _github_token() -> str:
+    try:
+        return st.secrets["github"]["token"]
+    except Exception:
+        return os.environ.get("GITHUB_TOKEN", "")
+
+
+def _github_enabled() -> bool:
+    return bool(_github_token())
+
+
+def _github_headers() -> dict:
+    return {
+        "Authorization": f"Bearer {_github_token()}",
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+
+
+def _github_fetch_leads() -> tuple:
+    """Return (leads_list, file_sha) from GitHub, or (None, None) if unavailable."""
+    if not _github_enabled():
+        return None, None
+    url = (
+        f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_LEADS_PATH}"
+        f"?ref={GITHUB_BRANCH}"
+    )
+    req = urllib.request.Request(url, headers=_github_headers())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        content = base64.b64decode(data["content"]).decode("utf-8")
+        leads = json.loads(content)
+        if not isinstance(leads, list):
+            return [], data.get("sha")
+        return leads, data.get("sha")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return [], None
+        return None, None
+    except Exception:
+        return None, None
+
+
+def _github_push_leads(leads: list, sha: str = None) -> bool:
+    if not _github_enabled():
+        return False
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_LEADS_PATH}"
+    payload = {
+        "message": "ProbateGuardian CRM: update leads_data.json",
+        "content": base64.b64encode(json.dumps(leads, indent=2).encode()).decode(),
+        "branch": GITHUB_BRANCH,
+    }
+    if sha:
+        payload["sha"] = sha
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={**_github_headers(), "Content-Type": "application/json"},
+        method="PUT",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=25) as resp:
+            data = json.loads(resp.read().decode())
+        st.session_state["_leads_github_sha"] = data.get("content", {}).get("sha")
+        return True
+    except Exception:
+        return False
+
+
+def _merge_leads_by_id(*lead_lists: list) -> list:
+    merged: dict = {}
+    for leads in lead_lists:
+        for lead in leads:
+            lid = lead.get("id")
+            if not lid:
+                continue
+            existing = merged.get(lid)
+            if not existing or lead.get("created", "") >= existing.get("created", ""):
+                merged[lid] = lead
+    return sorted(merged.values(), key=lambda x: x.get("created", ""), reverse=True)
+
+
+def _load_leads_local() -> list:
+    if not LEADS_FILE.exists():
+        return []
+    try:
+        with open(LEADS_FILE, "r", encoding="utf-8") as f:
+            leads = json.load(f)
+        if not isinstance(leads, list):
             return []
-    return []
+        return [normalize_lead(l) for l in leads]
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _save_leads_local(leads: list) -> None:
+    LEADS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(LEADS_FILE, "w", encoding="utf-8") as f:
+        json.dump(leads, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def load_leads() -> list:
+    """Load leads from leads_data.json — GitHub repo when token configured, else local file."""
+    local = _load_leads_local()
+    if not _github_enabled():
+        return local
+
+    remote_raw, sha = _github_fetch_leads()
+    if remote_raw is None:
+        return local
+
+    if sha:
+        st.session_state["_leads_github_sha"] = sha
+
+    remote = [normalize_lead(l) for l in remote_raw]
+    merged = _merge_leads_by_id(remote, local)
+    if merged != local:
+        _save_leads_local(merged)
+    return merged
 
 
 def save_leads(leads: list) -> None:
-    """Write leads to leads_data.json — survives refresh on the live app."""
-    LEADS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = LEADS_FILE.with_suffix(".json.tmp")
-    with open(tmp, "w") as f:
-        json.dump(leads, f, indent=2)
-    tmp.replace(LEADS_FILE)
+    """Write leads to leads_data.json immediately — local disk + GitHub when configured."""
+    if not leads:
+        existing = _load_leads_local()
+        if existing:
+            return
+
+    _save_leads_local(leads)
+
+    if _github_enabled():
+        sha = st.session_state.get("_leads_github_sha")
+        if not _github_push_leads(leads, sha):
+            _, fresh_sha = _github_fetch_leads()
+            if fresh_sha:
+                st.session_state["_leads_github_sha"] = fresh_sha
+            _github_push_leads(leads, st.session_state.get("_leads_github_sha"))
+
+
+def get_leads() -> list:
+    """Return session leads, loading from leads_data.json on first access."""
+    if "leads" not in st.session_state:
+        st.session_state.leads = load_leads()
+    return st.session_state.leads
 
 
 def persist_leads() -> list:
-    """Save to disk and reload session — keeps sidebar + analytics in sync."""
+    """Save session leads to leads_data.json and reload — keeps all views in sync."""
     save_leads(st.session_state.leads)
     st.session_state.leads = load_leads()
     return st.session_state.leads
 
 
 def sync_leads_session() -> list:
-    """Merge disk + session by lead id, then persist to leads_data.json."""
-    merged: dict = {}
-    for lead in load_leads():
-        lid = lead.get("id")
-        if lid:
-            merged[lid] = lead
-    for lead in st.session_state.get("leads", []):
-        lid = lead.get("id")
-        if lid:
-            merged[lid] = lead
-    st.session_state.leads = [
-        normalize_lead(l) for l in sorted(
-            merged.values(),
-            key=lambda x: x.get("created", ""),
-            reverse=True,
-        )
-    ]
-    save_leads(st.session_state.leads)
+    """Merge disk + session by lead id without dropping saved leads."""
+    disk = load_leads()
+    session = st.session_state.get("leads")
+    if session is None:
+        st.session_state.leads = disk
+        return disk
+
+    merged = _merge_leads_by_id(disk, session)
+    st.session_state.leads = [normalize_lead(l) for l in merged]
+    if merged != disk:
+        save_leads(st.session_state.leads)
     return st.session_state.leads
 
 
@@ -471,7 +600,7 @@ def set_lead_notes_full_text(lead_id: str, text: str, author: str = None) -> Non
         }]
     else:
         lead["notes"] = []
-    save_leads(st.session_state.leads)
+    persist_leads()
 
 
 def _on_dash_notes_saved(lead_id: str, widget_key: str) -> None:
@@ -673,7 +802,7 @@ def update_lead(lead_id: str, **fields) -> None:
                 except ValueError:
                     pass
             break
-    save_leads(st.session_state.leads)
+    persist_leads()
 
 
 def log_call(lead_id: str) -> None:
@@ -685,7 +814,7 @@ def log_call(lead_id: str) -> None:
             "type": "call",
             "detail": f"Call logged (#{lead['calls']})",
         })
-        save_leads(st.session_state.leads)
+        persist_leads()
 
 
 def add_note(lead_id: str, text: str, author: str = "Scott") -> None:
@@ -701,7 +830,7 @@ def add_note(lead_id: str, text: str, author: str = "Scott") -> None:
             "type": "note",
             "detail": text.strip()[:80],
         })
-        save_leads(st.session_state.leads)
+        persist_leads()
 
 
 def effective_pipeline_stage(lead: dict) -> str:
@@ -1371,9 +1500,7 @@ Schedule a complimentary **10–15 minute call** — phone or in-person at the p
 
 
 # ── Load persisted leads (after all helpers are defined) ─────────────────────
-if "leads" not in st.session_state:
-    st.session_state.leads = load_leads()
-sync_leads_session()
+get_leads()
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 with st.sidebar:
@@ -1387,7 +1514,7 @@ with st.sidebar:
     st.markdown("**ProbateGuardian Free TN**")
     st.markdown("Compassion · Clarity · Closings")
     st.markdown("---")
-    analytics = compute_analytics(sync_leads_session())
+    analytics = compute_analytics(get_leads())
     st.metric("Total Leads", analytics["total"])
     st.metric(f"{PARTNER_NAME.split()[0]}", analytics["branton_count"])
     st.metric("Due Today", analytics["due_today"])
@@ -1617,7 +1744,7 @@ with tab2:
 with tab3:
     st.subheader("📊 Partnership CRM — 24/7 Command Center")
 
-    call_first_leads = get_call_first_leads(sync_leads_session())
+    call_first_leads = get_call_first_leads(get_leads())
     st.markdown("### 🔥 Call First (Highest Priority)")
     if not call_first_leads:
         st.info(
@@ -1674,7 +1801,7 @@ with tab3:
             """
         )
 
-    analytics = compute_analytics(sync_leads_session())
+    analytics = compute_analytics(get_leads())
 
     st.markdown("### 📈 Analytics")
     m1, m2, m3, m4, m5, m6 = st.columns(6)
@@ -1720,7 +1847,6 @@ with tab3:
             if st.button("Import Pasted Leads", use_container_width=True, type="primary"):
                 if import_text.strip():
                     n = import_leads_from_text(import_text, source="paste")
-                    sync_leads_session()
                     st.success(f"✅ Imported {n} leads.")
                     st.rerun()
                 else:
@@ -1858,7 +1984,7 @@ with tab3:
                 with b4:
                     if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
                         st.session_state.leads = [l for l in st.session_state.leads if l["id"] != lead["id"]]
-                        save_leads(st.session_state.leads)
+                        persist_leads()
                         st.rerun()
 
                 st.markdown("**Notes**")
