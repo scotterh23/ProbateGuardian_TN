@@ -46,6 +46,7 @@ DETAIL_TO_ANALYTICS = {
     "Archived": "Closed",
 }
 CLOSED_DETAIL_STAGES = {"Closed / Sold", "Archived"}
+HIGH_SCORE_THRESHOLD = 65
 HEAT_WINDOW_DAYS = 60
 
 STATUS_TO_PIPELINE = {
@@ -148,6 +149,13 @@ st.markdown(
         background-color: #0d1117 !important;
         color: #e6edf3 !important;
         border: 1px solid #30363d !important;
+    }
+    .crm-due-today-marker { display: none; }
+    .crm-due-today-marker + div[data-testid="stButton"] > button {
+        background: linear-gradient(135deg, #d29922, #f0b429) !important;
+        color: #0d1117 !important;
+        font-weight: 700 !important;
+        box-shadow: 0 4px 14px rgba(240, 180, 41, 0.45) !important;
     }
     </style>
     """,
@@ -663,6 +671,41 @@ def _select_crm_lead(lead_id: str) -> None:
         _flush_dash_notes(prev)
     st.session_state.crm_selected_lead_id = lead_id
     st.session_state.pop("_dash_notes_sync_id", None)
+
+
+def _is_high_score_lead(lead: dict) -> bool:
+    return int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD
+
+
+def _filter_leads_due_today(leads: list) -> list:
+    today = datetime.now().strftime("%Y-%m-%d")
+    result = [
+        l for l in leads
+        if effective_pipeline_stage(l) != "Closed"
+        and (l.get("follow_up_iso", "") == today or _is_high_score_lead(l))
+    ]
+    result.sort(key=lambda x: (
+        0 if x.get("follow_up_iso", "") == today else 1,
+        -int(x.get("score") or 0),
+        x.get("follow_up_iso", "9999-12-31"),
+    ))
+    return result
+
+
+def _apply_crm_list_filters(leads: list) -> list:
+    result = list(leads)
+    if st.session_state.get("crm_list_mode") == "due_today":
+        result = _filter_leads_due_today(result)
+    stage_filter = st.session_state.get("crm_stage_list_filter", "All")
+    if stage_filter and stage_filter != "All":
+        result = [l for l in result if detail_pipeline_stage(l) == stage_filter]
+    return result
+
+
+def _on_pipeline_stage_list_filter(lead_id: str) -> None:
+    stage = st.session_state.get(f"stage_{lead_id}")
+    if stage:
+        st.session_state.crm_stage_list_filter = stage
 
 
 def apply_heat_classification(lead: dict) -> dict:
@@ -1811,6 +1854,22 @@ with tab2:
 # TAB 3 — Dashboard / CRM
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
+    st.session_state.setdefault("crm_list_mode", "all")
+    st.session_state.setdefault("crm_stage_list_filter", "All")
+
+    due_col, all_col, _ = st.columns([1, 1, 4])
+    with due_col:
+        st.markdown('<div class="crm-due-today-marker"></div>', unsafe_allow_html=True)
+        if st.button("📅 Due Today", key="crm_due_today_btn", use_container_width=True, type="primary"):
+            st.session_state.crm_list_mode = "due_today"
+            st.session_state.crm_stage_list_filter = "All"
+            st.rerun()
+    with all_col:
+        if st.button("All Leads", key="crm_all_leads_btn", use_container_width=True):
+            st.session_state.crm_list_mode = "all"
+            st.session_state.crm_stage_list_filter = "All"
+            st.rerun()
+
     analytics = compute_analytics(get_leads())
 
     st.markdown("### 📈 Analytics")
@@ -1917,23 +1976,35 @@ with tab3:
         if county_filter != "All":
             filtered = [l for l in filtered if l.get("county") == county_filter]
 
-        st.caption(f"Showing **{len(filtered)}** of **{len(st.session_state.leads)}** leads")
+        list_filtered = _apply_crm_list_filters(filtered)
+        filter_bits = []
+        if st.session_state.get("crm_list_mode") == "due_today":
+            filter_bits.append("due today + high-score")
+        if st.session_state.get("crm_stage_list_filter", "All") != "All":
+            filter_bits.append(st.session_state.crm_stage_list_filter)
+        filter_note = f" · List: **{', '.join(filter_bits)}**" if filter_bits else ""
+        st.caption(
+            f"Showing **{len(list_filtered)}** in list / **{len(filtered)}** matched / "
+            f"**{len(st.session_state.leads)}** total{filter_note}"
+        )
 
         if not filtered:
             st.info("No leads match filters. Import via **Import Leads** tab or use Lead Workflow.")
         else:
-            filtered_ids = {l["id"] for l in filtered}
-            if st.session_state.get("crm_selected_lead_id") not in filtered_ids:
+            list_ids = {l["id"] for l in list_filtered}
+            if list_filtered and st.session_state.get("crm_selected_lead_id") not in list_ids:
                 _flush_dash_notes(st.session_state.get("crm_selected_lead_id"))
-                st.session_state.crm_selected_lead_id = filtered[0]["id"]
+                st.session_state.crm_selected_lead_id = list_filtered[0]["id"]
                 st.session_state.pop("_dash_notes_sync_id", None)
 
             list_col, detail_col = st.columns([2, 3], gap="medium")
 
             with list_col:
                 st.markdown("**Leads**")
+                if not list_filtered:
+                    st.info("No leads match the current list filter. Tap **All Leads** to reset.")
                 with st.container(height=520):
-                    for item in filtered:
+                    for item in list_filtered:
                         is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
                         if st.button(
                             _lead_list_button_label(item),
@@ -1961,6 +2032,8 @@ with tab3:
                             DETAIL_PIPELINE_STAGES,
                             index=DETAIL_PIPELINE_STAGES.index(current_stage),
                             key=f"stage_{lead['id']}",
+                            on_change=_on_pipeline_stage_list_filter,
+                            args=(lead["id"],),
                         )
                     with e2:
                         fu_label = "Next Follow-up Date" if new_stage == NURTURE_STAGE else "Follow-Up"
