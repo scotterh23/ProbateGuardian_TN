@@ -765,7 +765,8 @@ def _quick_stage_status(stage: str, lead: dict) -> str:
     return lead.get("status", "New")
 
 
-def _quick_stage_change(lead_id: str, stage: str) -> None:
+def _quick_stage_callback(lead_id: str, stage: str) -> None:
+    """Runs via on_click before widgets render — safe to update widget session state."""
     _flush_dash_notes(lead_id)
     lead = find_lead(lead_id)
     if not lead:
@@ -2126,25 +2127,46 @@ with tab3:
                     st.markdown('<div class="crm-quick-stage-start"></div>', unsafe_allow_html=True)
                     qs1, qs2, qs3, qs4, qs5 = st.columns(5, gap="small")
                     with qs1:
-                        if st.button("🔥 Move to Hot", key=f"qhot_{lead['id']}", use_container_width=True, type="primary"):
-                            _quick_stage_change(lead["id"], "🔥 Hot / New (call today)")
-                            st.rerun()
+                        st.button(
+                            "🔥 Move to Hot",
+                            key=f"qhot_{lead['id']}",
+                            use_container_width=True,
+                            type="primary",
+                            on_click=_quick_stage_callback,
+                            args=(lead["id"], "🔥 Hot / New (call today)"),
+                        )
                     with qs2:
-                        if st.button("Move to Warm", key=f"qwarm_{lead['id']}", use_container_width=True):
-                            _quick_stage_change(lead["id"], "Warm / Talking")
-                            st.rerun()
+                        st.button(
+                            "Move to Warm",
+                            key=f"qwarm_{lead['id']}",
+                            use_container_width=True,
+                            on_click=_quick_stage_callback,
+                            args=(lead["id"], "Warm / Talking"),
+                        )
                     with qs3:
-                        if st.button("Set Appointment", key=f"qappt_{lead['id']}", use_container_width=True):
-                            _quick_stage_change(lead["id"], "Appointment Set")
-                            st.rerun()
+                        st.button(
+                            "Set Appointment",
+                            key=f"qappt_{lead['id']}",
+                            use_container_width=True,
+                            on_click=_quick_stage_callback,
+                            args=(lead["id"], "Appointment Set"),
+                        )
                     with qs4:
-                        if st.button("Not Interested", key=f"qni_{lead['id']}", use_container_width=True):
-                            _quick_stage_change(lead["id"], "Not Interested / Keeping")
-                            st.rerun()
+                        st.button(
+                            "Not Interested",
+                            key=f"qni_{lead['id']}",
+                            use_container_width=True,
+                            on_click=_quick_stage_callback,
+                            args=(lead["id"], "Not Interested / Keeping"),
+                        )
                     with qs5:
-                        if st.button("Archive", key=f"qarch_{lead['id']}", use_container_width=True):
-                            _quick_stage_change(lead["id"], "Archived")
-                            st.rerun()
+                        st.button(
+                            "Archive",
+                            key=f"qarch_{lead['id']}",
+                            use_container_width=True,
+                            on_click=_quick_stage_callback,
+                            args=(lead["id"], "Archived"),
+                        )
 
                     st.caption(
                         f"**{lead.get('decedent', 'Unknown')}** · {lead.get('address', '—')} · "
