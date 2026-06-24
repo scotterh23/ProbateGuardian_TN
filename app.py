@@ -174,8 +174,12 @@ def load_leads() -> list:
 
 
 def save_leads(leads: list) -> None:
-    with open(LEADS_FILE, "w") as f:
+    """Write leads to leads_data.json — survives refresh on the live app."""
+    LEADS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = LEADS_FILE.with_suffix(".json.tmp")
+    with open(tmp, "w") as f:
         json.dump(leads, f, indent=2)
+    tmp.replace(LEADS_FILE)
 
 
 def persist_leads() -> list:
@@ -186,7 +190,7 @@ def persist_leads() -> list:
 
 
 def sync_leads_session() -> list:
-    """Merge disk + session by lead id — sidebar and Analytics always match."""
+    """Merge disk + session by lead id, then persist to leads_data.json."""
     merged: dict = {}
     for lead in load_leads():
         lid = lead.get("id")
@@ -203,6 +207,7 @@ def sync_leads_session() -> list:
             reverse=True,
         )
     ]
+    save_leads(st.session_state.leads)
     return st.session_state.leads
 
 
@@ -756,6 +761,22 @@ def compute_analytics(leads: list) -> dict:
         "sources": sources,
         "avg_calls": round(total_calls / max(total, 1), 1),
     }
+
+
+def get_call_first_leads(leads: list) -> list:
+    """Bulk Qualifier green leads — highest score first for Branton's daily calls."""
+    queue = [
+        l for l in leads
+        if l.get("source") == "bulk"
+        and effective_pipeline_stage(l) != "Closed"
+    ]
+    queue.sort(
+        key=lambda x: (
+            -int(x.get("score") or 0),
+            x.get("follow_up_iso", "9999-12-31"),
+        )
+    )
+    return queue
 
 
 def import_leads_from_text(text: str, source: str = "import") -> int:
@@ -1595,6 +1616,25 @@ with tab2:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
     st.subheader("📊 Partnership CRM — 24/7 Command Center")
+
+    call_first_leads = get_call_first_leads(sync_leads_session())
+    st.markdown("### 🔥 Call First (Highest Priority)")
+    if not call_first_leads:
+        st.info(
+            "No Bulk Qualifier leads yet — paste county data in **Bulk Qualifier**, "
+            "then your highest-score calls appear here first."
+        )
+    else:
+        call_lines = []
+        for rank, lead in enumerate(call_first_leads, 1):
+            call_lines.append(
+                f"**{rank}. {lead.get('decedent', 'Unknown')}** — "
+                f"Score **{lead.get('score', 0)}** · "
+                f"{lead.get('address', '—')} · "
+                f"📞 {lead.get('phone') or '—'} · "
+                f"{lead.get('status', '—')}"
+            )
+        st.success("\n\n".join(call_lines))
 
     st.markdown("### 🗺️ County Strategy")
     st.info(
