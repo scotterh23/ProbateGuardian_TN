@@ -1769,65 +1769,6 @@ with tab2:
 # TAB 3 — Dashboard / CRM
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
-    st.subheader("📊 Partnership CRM — 24/7 Command Center")
-
-    call_first_leads = get_call_first_leads(get_leads())
-    st.markdown("### 🔥 Call First (Highest Priority)")
-    if not call_first_leads:
-        st.info(
-            "No Bulk Qualifier leads yet — paste county data in **Bulk Qualifier**, "
-            "then your highest-score calls appear here first."
-        )
-    else:
-        call_lines = []
-        for rank, lead in enumerate(call_first_leads, 1):
-            call_lines.append(
-                f"**{rank}. {lead.get('decedent', 'Unknown')}** — "
-                f"Score **{lead.get('score', 0)}** · "
-                f"{lead.get('address', '—')} · "
-                f"📞 {lead.get('phone') or '—'} · "
-                f"{lead.get('status', '—')}"
-            )
-        st.success("\n\n".join(call_lines))
-
-    st.markdown("### 🗺️ County Strategy")
-    st.info(
-        "**Start with Wilson County** (home base, easy online records). "
-        "**Top 5 ranked:** 1. Wilson · 2. Davidson · 3. Rutherford · 4. Williamson · 5. Sumner — "
-        "all have online/paid digital access so no courthouse runs needed."
-    )
-
-    st.markdown("### 🌐 Live App — 24/7 Access")
-    st.markdown(
-        '[**https://probateguardian-free-tn.streamlit.app**](https://probateguardian-free-tn.streamlit.app)',
-    )
-    st.success(
-        "✅ **LIVE NOW** — Scott Hardesty + Branton Walker can access ProbateGuardian anytime "
-        "on phone, tablet, or desktop → **https://probateguardian-free-tn.streamlit.app**"
-    )
-
-    with st.expander("🚀 Deploy & Update — Streamlit Cloud + GitHub", expanded=False):
-        st.markdown(
-            """
-            **Live URL:** [https://probateguardian-free-tn.streamlit.app](https://probateguardian-free-tn.streamlit.app)
-
-            **GitHub Repo:** [https://github.com/scotterh23/ProbateGuardian_TN.git](https://github.com/scotterh23/ProbateGuardian_TN.git)
-
-            **Push updates (run locally after any change):**
-            ```bash
-            cd /Users/scott/ProbateGuardian_TN
-            git add app.py requirements.txt leads_data.json && git commit -m "ProbateGuardian CRM update"
-            git push origin main
-            ```
-
-            Streamlit Cloud auto-redeploys from `main` — Branton's link stays the same.
-
-            **Manage app:** [share.streamlit.io](https://share.streamlit.io) → select **ProbateGuardian_TN** → main file: `app.py`
-
-            **Repo must include:** `app.py` · `requirements.txt` (`streamlit>=1.32.0`)
-            """
-        )
-
     analytics = compute_analytics(get_leads())
 
     st.markdown("### 📈 Analytics")
