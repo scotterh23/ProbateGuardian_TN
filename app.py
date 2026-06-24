@@ -787,16 +787,20 @@ def _quick_stage_status(stage: str, lead: dict) -> str:
 
 
 def _quick_stage_callback(lead_id: str, stage: str) -> None:
-    """Update exactly one lead by ID — save to disk without re-normalizing other leads."""
-    if not lead_id or lead_id != st.session_state.get("crm_selected_lead_id"):
+    """Update exactly one lead by unique ID — never replace or reload the full list."""
+    if not lead_id:
         return
     _flush_dash_notes_in_memory(lead_id)
     lead = find_lead(lead_id)
-    if not lead or lead.get("id") != lead_id:
+    if not lead:
         return
-    lead["pipeline_stage"] = stage
-    lead["status"] = _quick_stage_status(stage, lead)
-    save_leads(st.session_state.leads)
+    if not patch_lead_by_id(
+        lead_id,
+        pipeline_stage=stage,
+        status=_quick_stage_status(stage, lead),
+    ):
+        return
+    st.session_state.crm_selected_lead_id = lead_id
     st.session_state[f"stage_{lead_id}"] = stage
     st.session_state.crm_stage_list_filter = stage
     st.session_state.pop("_dash_notes_sync_id", None)
@@ -990,9 +994,37 @@ def build_lead(parsed: dict, **extra) -> dict:
 
 def find_lead(lead_id: str):
     for lead in st.session_state.leads:
-        if lead["id"] == lead_id:
+        if lead.get("id") == lead_id:
             return lead
     return None
+
+
+def patch_lead_by_id(lead_id: str, **updates) -> bool:
+    """Update exactly one lead by unique ID — all other leads stay untouched."""
+    if not lead_id or not updates:
+        return False
+
+    leads = st.session_state.get("leads")
+    if not isinstance(leads, list):
+        return False
+
+    new_leads = []
+    patched = False
+    for item in leads:
+        if item.get("id") == lead_id:
+            updated = dict(item)
+            updated.update(updates)
+            new_leads.append(updated)
+            patched = True
+        else:
+            new_leads.append(item)
+
+    if not patched:
+        return False
+
+    st.session_state.leads = new_leads
+    save_leads(new_leads)
+    return True
 
 
 def update_lead(lead_id: str, **fields) -> None:
