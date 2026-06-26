@@ -199,6 +199,32 @@ st.markdown(
         margin: 0.2rem 0 0.05rem 0;
         word-break: break-word;
     }
+    [data-testid="stToast"] {
+        background: linear-gradient(135deg, #1a4d2e, #238636) !important;
+        color: #ffffff !important;
+        border: 1px solid #3fb950 !important;
+    }
+    .notes-saved-caption {
+        color: #3fb950 !important;
+        font-weight: 700 !important;
+        font-size: 0.92rem !important;
+        margin-top: 0.35rem !important;
+    }
+    .export-notes-marker { display: none; }
+    .export-notes-marker + div [data-testid="stDownloadButton"] > button {
+        background: linear-gradient(135deg, #b62324, #da3633) !important;
+        color: #ffffff !important;
+        border: none !important;
+        font-weight: 700 !important;
+        font-size: 1.05rem !important;
+        min-height: 3.25rem !important;
+        width: 100% !important;
+        box-shadow: 0 4px 18px rgba(218, 54, 51, 0.45) !important;
+    }
+    .export-notes-marker + div [data-testid="stDownloadButton"] > button:hover {
+        background: linear-gradient(135deg, #da3633, #f85149) !important;
+        color: #ffffff !important;
+    }
     .crm-lead-primary-contact {
         background: linear-gradient(135deg, #1a3a2a 0%, #0d2818 100%);
         border: 1px solid #2ea043;
@@ -468,6 +494,7 @@ def get_leads() -> list:
     """Return session leads, loading from leads_data.json on first access."""
     if "leads" not in st.session_state:
         st.session_state.leads = load_leads()
+        st.session_state["_notes_loaded_banner_pending"] = True
     return st.session_state.leads
 
 
@@ -826,6 +853,11 @@ def classify_heat_status(days_since: int) -> tuple:
     return "Warm", "Warm"
 
 
+NOTES_AUTOSAVE_DEBOUNCE_SEC = 3
+NOTES_SAVED_FEEDBACK_SEC = 3
+NOTES_TOAST_MESSAGE = "💾 Saved to disk"
+
+
 def get_lead_notes_full_text(lead: dict) -> str:
     """Full notes text for the dashboard editor — respects saved empty notes."""
     if lead.get("notes_user_edited"):
@@ -838,6 +870,31 @@ def get_lead_notes_full_text(lead: dict) -> str:
         if parts:
             return "\n\n".join(parts)
     return (lead.get("raw") or "").strip()
+
+
+def _notes_disk_snapshot_key(lead_id: str) -> str:
+    return f"_notes_disk_snapshot_{lead_id}"
+
+
+def _sync_notes_disk_snapshot(lead_id: str, text: str) -> None:
+    st.session_state[_notes_disk_snapshot_key(lead_id)] = text or ""
+
+
+def _get_notes_disk_snapshot(lead_id: str, lead: dict = None) -> str:
+    key = _notes_disk_snapshot_key(lead_id)
+    if key in st.session_state:
+        return st.session_state[key]
+    if lead is None:
+        lead = _leads_lookup_by_id().get(lead_id)
+    snapshot = get_lead_notes_full_text(lead) if lead else ""
+    st.session_state[key] = snapshot
+    return snapshot
+
+
+def _show_notes_saved_feedback(lead_id: str) -> None:
+    st.session_state["_notes_saved_lead_id"] = lead_id
+    st.session_state["_notes_saved_at"] = time.time()
+    st.toast(NOTES_TOAST_MESSAGE, icon="✅", duration=NOTES_SAVED_FEEDBACK_SEC)
 
 
 def set_lead_notes_by_id(
@@ -865,9 +922,10 @@ def set_lead_notes_by_id(
     else:
         target["notes"] = []
     save_leads(st.session_state.leads)
+    _sync_notes_disk_snapshot(lead_id, cleaned)
+    st.session_state.pop(f"_notes_dirty_since_{lead_id}", None)
     if show_saved:
-        _mark_notes_saved(lead_id)
-        st.toast("💾 Saved", duration=2)
+        _show_notes_saved_feedback(lead_id)
     return True
 
 
@@ -875,16 +933,11 @@ def set_lead_notes_full_text(lead_id: str, text: str, author: str = None) -> Non
     set_lead_notes_by_id(lead_id, text, author)
 
 
-def _mark_notes_saved(lead_id: str) -> None:
-    st.session_state["_notes_saved_lead_id"] = lead_id
-    st.session_state["_notes_saved_at"] = time.time()
-
-
 def _notes_saved_visible(lead_id: str) -> bool:
     if st.session_state.get("_notes_saved_lead_id") != lead_id:
         return False
     saved_at = st.session_state.get("_notes_saved_at", 0)
-    return (time.time() - saved_at) < 2
+    return (time.time() - saved_at) < NOTES_SAVED_FEEDBACK_SEC
 
 
 def _on_dash_notes_saved(lead_id: str, widget_key: str) -> None:
@@ -897,7 +950,7 @@ def _on_dash_notes_saved(lead_id: str, widget_key: str) -> None:
 
 
 def _flush_dash_notes(lead_id: str, show_saved: bool = False) -> None:
-    """Persist the notes text area for a lead before switching or saving."""
+    """Force-save the notes text area for a lead before switching or saving."""
     if not lead_id:
         return
     widget_key = f"dash_notes_{lead_id}"
@@ -910,6 +963,16 @@ def _flush_dash_notes(lead_id: str, show_saved: bool = False) -> None:
     )
 
 
+def _flush_all_dash_notes_in_session(show_saved: bool = False) -> None:
+    """Force-save every open notes editor in session state."""
+    for key in list(st.session_state.keys()):
+        if not key.startswith("dash_notes_"):
+            continue
+        lead_id = key[len("dash_notes_"):]
+        if lead_id:
+            _flush_dash_notes(lead_id, show_saved=show_saved)
+
+
 def _flush_dash_notes_in_memory(lead_id: str) -> None:
     """Persist notes widget for one lead by ID before other in-place mutations."""
     if not lead_id:
@@ -918,6 +981,87 @@ def _flush_dash_notes_in_memory(lead_id: str) -> None:
     if widget_key not in st.session_state:
         return
     set_lead_notes_by_id(lead_id, st.session_state.get(widget_key, ""))
+
+
+def build_notes_export_csv(leads: list) -> bytes:
+    """Backup CSV of all lead notes for instant download."""
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "lead_id",
+        "decedent",
+        "address",
+        "county",
+        "phone",
+        "email",
+        "contact_name",
+        "contact_role",
+        "pipeline_stage",
+        "status",
+        "notes_full_text",
+        "notes_updated",
+        "notes_by",
+    ])
+    for lead in leads:
+        notes = lead.get("notes") or []
+        writer.writerow([
+            lead.get("id", ""),
+            lead.get("decedent", ""),
+            lead.get("address", ""),
+            lead.get("county", ""),
+            lead.get("phone", ""),
+            lead.get("email", ""),
+            lead.get("contact_name", ""),
+            lead.get("contact_role", ""),
+            lead.get("pipeline_stage", ""),
+            lead.get("status", ""),
+            get_lead_notes_full_text(lead),
+            notes[0].get("ts", "") if notes else "",
+            notes[0].get("by", "") if notes else "",
+        ])
+    return buf.getvalue().encode("utf-8")
+
+
+@st.fragment(run_every=timedelta(seconds=1))
+def _render_lead_notes_editor(lead: dict) -> None:
+    """Auto-save notes 3 seconds after typing stops; polls widget value every second."""
+    lead_id = lead["id"]
+    notes_widget_key = f"dash_notes_{lead_id}"
+    dirty_key = f"_notes_dirty_since_{lead_id}"
+
+    if st.session_state.get("_dash_notes_sync_id") != lead_id:
+        loaded = get_lead_notes_full_text(lead)
+        st.session_state[notes_widget_key] = loaded
+        _sync_notes_disk_snapshot(lead_id, loaded)
+        st.session_state["_dash_notes_sync_id"] = lead_id
+        st.session_state.pop(dirty_key, None)
+
+    st.markdown("**Notes**")
+    st.markdown('<div class="dash-notes-marker"></div>', unsafe_allow_html=True)
+    st.text_area(
+        "Full lead notes",
+        height=220,
+        key=notes_widget_key,
+        label_visibility="collapsed",
+        on_change=_on_dash_notes_saved,
+        args=(lead_id, notes_widget_key),
+    )
+
+    current = st.session_state.get(notes_widget_key, "")
+    disk = _get_notes_disk_snapshot(lead_id, lead)
+    if current != disk:
+        if dirty_key not in st.session_state:
+            st.session_state[dirty_key] = time.time()
+        elif time.time() - st.session_state[dirty_key] >= NOTES_AUTOSAVE_DEBOUNCE_SEC:
+            set_lead_notes_by_id(lead_id, current, show_saved=True)
+    else:
+        st.session_state.pop(dirty_key, None)
+
+    if _notes_saved_visible(lead_id):
+        st.markdown(
+            '<p class="notes-saved-caption">💾 Saved to disk</p>',
+            unsafe_allow_html=True,
+        )
 
 
 def _format_poc_name(name: str) -> str:
@@ -2281,6 +2425,10 @@ with tab_add_leads:
 # TAB — Dashboard / CRM (default)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_dashboard:
+    _flush_all_dash_notes_in_session(show_saved=False)
+    if st.session_state.pop("_notes_loaded_banner_pending", False):
+        st.success("✅ All notes loaded safely")
+
     st.session_state.setdefault("crm_list_mode", "all")
     st.session_state.setdefault("crm_pipe_filter", "All")
 
@@ -2329,6 +2477,17 @@ with tab_dashboard:
             st.markdown(f"- **Top lead source:** {top_src}")
         else:
             st.caption("Start in Wilson County · use Bulk Qualifier · assign to Branton.")
+
+    st.markdown("---")
+    st.markdown('<div class="export-notes-marker"></div>', unsafe_allow_html=True)
+    st.download_button(
+        label="📥 Export All Notes to CSV",
+        data=build_notes_export_csv(get_leads()),
+        file_name=f"probate_notes_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        mime="text/csv",
+        use_container_width=True,
+        key="export_all_notes_csv",
+    )
 
     st.markdown("---")
     dash_tab1, dash_tab2, dash_tab3 = st.tabs(["📋 Leads Table", "📅 Follow-Up Scheduler", "📥 Import Leads"])
@@ -2574,39 +2733,24 @@ with tab_dashboard:
                             st.rerun()
                     with b2:
                         if st.button("📞 Log Call", key=f"call_{lead['id']}", use_container_width=True):
-                            _flush_dash_notes(lead["id"])
+                            _flush_dash_notes(lead["id"], show_saved=True)
                             log_call(lead["id"])
                             st.rerun()
                     with b3:
                         if st.button("⬆️ → Warm", key=f"warm_{lead['id']}", use_container_width=True):
-                            _flush_dash_notes(lead["id"])
+                            _flush_dash_notes(lead["id"], show_saved=True)
                             update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
                             st.rerun()
                     with b4:
                         if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
-                            _flush_dash_notes(lead["id"])
+                            _flush_dash_notes(lead["id"], show_saved=True)
                             st.session_state.leads = [l for l in st.session_state.leads if l["id"] != lead["id"]]
                             persist_leads()
                             st.session_state.pop("crm_selected_lead_id", None)
                             st.session_state.pop("_dash_notes_sync_id", None)
                             st.rerun()
 
-                    st.markdown("**Notes**")
-                    notes_widget_key = f"dash_notes_{lead['id']}"
-                    if st.session_state.get("_dash_notes_sync_id") != lead["id"]:
-                        st.session_state[notes_widget_key] = get_lead_notes_full_text(lead)
-                        st.session_state["_dash_notes_sync_id"] = lead["id"]
-                    st.markdown('<div class="dash-notes-marker"></div>', unsafe_allow_html=True)
-                    st.text_area(
-                        "Full lead notes",
-                        height=220,
-                        key=notes_widget_key,
-                        label_visibility="collapsed",
-                        on_change=_on_dash_notes_saved,
-                        args=(lead["id"], notes_widget_key),
-                    )
-                    if _notes_saved_visible(lead["id"]):
-                        st.caption("💾 Saved")
+                    _render_lead_notes_editor(lead)
                     if lead.get("days_since_death") is not None:
                         st.caption(
                             f"Death ~{lead.get('days_since_death')} days ago · "
