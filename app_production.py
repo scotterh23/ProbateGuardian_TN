@@ -5,6 +5,7 @@ import io
 import json
 import os
 import re
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta
@@ -826,64 +827,97 @@ def classify_heat_status(days_since: int) -> tuple:
 
 
 def get_lead_notes_full_text(lead: dict) -> str:
+    """Full notes text for the dashboard editor — respects saved empty notes."""
+    if lead.get("notes_user_edited"):
+        notes = lead.get("notes") or []
+        parts = [(n.get("text") or "").strip() for n in notes if (n.get("text") or "").strip()]
+        return "\n\n".join(parts)
     notes = lead.get("notes") or []
-    if not notes:
-        raw = (lead.get("raw") or "").strip()
-        return raw
-    parts = [(n.get("text") or "").strip() for n in notes if (n.get("text") or "").strip()]
-    return "\n\n".join(parts)
+    if notes:
+        parts = [(n.get("text") or "").strip() for n in notes if (n.get("text") or "").strip()]
+        if parts:
+            return "\n\n".join(parts)
+    return (lead.get("raw") or "").strip()
 
 
-def set_lead_notes_full_text(lead_id: str, text: str, author: str = None) -> None:
-    lead = find_lead(lead_id)
-    if not lead:
-        return
+def set_lead_notes_by_id(
+    lead_id: str,
+    text: str,
+    author: str = None,
+    *,
+    show_saved: bool = False,
+) -> bool:
+    """Dict lookup by lead ID — atomically save full notes text to leads_data.json."""
+    if not lead_id:
+        return False
+    target = _leads_lookup_by_id().get(lead_id)
+    if not target:
+        return False
     author = author or PARTNER_NAME
     cleaned = (text or "").strip()
+    target["notes_user_edited"] = True
     if cleaned:
-        lead["notes"] = [{
+        target["notes"] = [{
             "ts": datetime.now().isoformat(),
             "text": cleaned,
             "by": author,
         }]
     else:
-        lead["notes"] = []
-    persist_leads()
+        target["notes"] = []
+    save_leads(st.session_state.leads)
+    if show_saved:
+        _mark_notes_saved(lead_id)
+        st.toast("💾 Saved", duration=2)
+    return True
+
+
+def set_lead_notes_full_text(lead_id: str, text: str, author: str = None) -> None:
+    set_lead_notes_by_id(lead_id, text, author)
+
+
+def _mark_notes_saved(lead_id: str) -> None:
+    st.session_state["_notes_saved_lead_id"] = lead_id
+    st.session_state["_notes_saved_at"] = time.time()
+
+
+def _notes_saved_visible(lead_id: str) -> bool:
+    if st.session_state.get("_notes_saved_lead_id") != lead_id:
+        return False
+    saved_at = st.session_state.get("_notes_saved_at", 0)
+    return (time.time() - saved_at) < 2
 
 
 def _on_dash_notes_saved(lead_id: str, widget_key: str) -> None:
     if lead_id:
-        set_lead_notes_full_text(lead_id, st.session_state.get(widget_key, ""))
+        set_lead_notes_by_id(
+            lead_id,
+            st.session_state.get(widget_key, ""),
+            show_saved=True,
+        )
 
 
-def _flush_dash_notes(lead_id: str) -> None:
-    """Persist the notes text area for a lead before switching to another."""
-    if not lead_id:
-        return
-    widget_key = f"dash_notes_{lead_id}"
-    if widget_key in st.session_state:
-        set_lead_notes_full_text(lead_id, st.session_state.get(widget_key, ""))
-
-
-def _flush_dash_notes_in_memory(lead_id: str) -> None:
-    """Copy notes widget into the one matching lead — no full-list reload."""
+def _flush_dash_notes(lead_id: str, show_saved: bool = False) -> None:
+    """Persist the notes text area for a lead before switching or saving."""
     if not lead_id:
         return
     widget_key = f"dash_notes_{lead_id}"
     if widget_key not in st.session_state:
         return
-    lead = find_lead(lead_id)
-    if not lead:
+    set_lead_notes_by_id(
+        lead_id,
+        st.session_state.get(widget_key, ""),
+        show_saved=show_saved,
+    )
+
+
+def _flush_dash_notes_in_memory(lead_id: str) -> None:
+    """Persist notes widget for one lead by ID before other in-place mutations."""
+    if not lead_id:
         return
-    cleaned = (st.session_state.get(widget_key, "") or "").strip()
-    if cleaned:
-        lead["notes"] = [{
-            "ts": datetime.now().isoformat(),
-            "text": cleaned,
-            "by": PARTNER_NAME,
-        }]
-    else:
-        lead["notes"] = []
+    widget_key = f"dash_notes_{lead_id}"
+    if widget_key not in st.session_state:
+        return
+    set_lead_notes_by_id(lead_id, st.session_state.get(widget_key, ""))
 
 
 def _format_poc_name(name: str) -> str:
@@ -972,7 +1006,7 @@ def _lead_list_button_label(lead: dict) -> str:
 def _select_crm_lead(lead_id: str) -> None:
     prev = st.session_state.get("crm_selected_lead_id")
     if prev and prev != lead_id:
-        _flush_dash_notes(prev)
+        _flush_dash_notes(prev, show_saved=True)
     st.session_state.crm_selected_lead_id = lead_id
     st.session_state.pop("_dash_notes_sync_id", None)
 
@@ -2403,7 +2437,7 @@ with tab_dashboard:
         else:
             list_ids = {l["id"] for l in list_filtered}
             if st.session_state.get("crm_selected_lead_id") not in list_ids:
-                _flush_dash_notes(st.session_state.get("crm_selected_lead_id"))
+                _flush_dash_notes(st.session_state.get("crm_selected_lead_id"), show_saved=True)
                 st.session_state.crm_selected_lead_id = list_filtered[0]["id"]
                 st.session_state.pop("_dash_notes_sync_id", None)
 
@@ -2526,7 +2560,7 @@ with tab_dashboard:
                     b1, b2, b3, b4 = st.columns(4)
                     with b1:
                         if st.button("💾 Save Changes", key=f"save_{lead['id']}", use_container_width=True, type="primary"):
-                            _flush_dash_notes(lead["id"])
+                            _flush_dash_notes(lead["id"], show_saved=True)
                             update_lead(
                                 lead["id"],
                                 pipeline_stage=new_stage,
@@ -2571,6 +2605,8 @@ with tab_dashboard:
                         on_change=_on_dash_notes_saved,
                         args=(lead["id"], notes_widget_key),
                     )
+                    if _notes_saved_visible(lead["id"]):
+                        st.caption("💾 Saved")
                     if lead.get("days_since_death") is not None:
                         st.caption(
                             f"Death ~{lead.get('days_since_death')} days ago · "
