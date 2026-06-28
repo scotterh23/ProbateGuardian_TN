@@ -329,6 +329,44 @@ st.markdown(
         margin: 0.25rem 0 0.5rem 0;
         line-height: 1.1;
     }
+    .call-mode-enter-marker { display: none; }
+    .call-mode-enter-marker + div [data-testid="stButton"] > button {
+        min-height: 4rem !important;
+        font-size: 1.2rem !important;
+        font-weight: 800 !important;
+        background: linear-gradient(135deg, #1a7f37, #2ea043) !important;
+        box-shadow: 0 6px 26px rgba(46, 160, 67, 0.55) !important;
+    }
+    .call-mode-lead-card {
+        background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+        border: 2px solid #30363d;
+        border-radius: 14px;
+        padding: 0.85rem 1rem;
+        margin: 0.65rem 0;
+    }
+    .call-mode-lead-card.call-mode-vacant {
+        border-color: #f85149;
+        box-shadow: 0 0 16px rgba(248, 81, 73, 0.25);
+    }
+    .call-mode-lead-title {
+        font-size: 1.12rem;
+        font-weight: 800;
+        color: #f0f6fc;
+        margin: 0 0 0.25rem 0;
+    }
+    .call-mode-paste-marker + div [data-testid="stTextArea"] textarea {
+        min-height: 10rem !important;
+        border: 2px solid #2ea043 !important;
+    }
+    .call-mode-thumb-start { display: none; }
+    .call-mode-thumb-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
+        min-height: 3.35rem !important;
+        font-size: 0.92rem !important;
+        font-weight: 700 !important;
+        white-space: normal !important;
+        line-height: 1.2 !important;
+        padding: 0.6rem 0.35rem !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -2458,6 +2496,101 @@ def get_call_first_leads(leads: list) -> list:
     return queue
 
 
+def _is_crusher_queue_lead(lead: dict) -> bool:
+    if lead.get("source") == "bulk":
+        return True
+    if lead.get("vacant_likely"):
+        return True
+    for note in lead.get("notes") or []:
+        if isinstance(note, dict) and (note.get("by") or "") == "90-Day Crusher":
+            return True
+    return False
+
+
+def get_branton_call_mode_leads(leads: list, limit: int = 10) -> list:
+    """Top hottest Crusher-queue leads — 🔥 vacant first."""
+    pool = [
+        l for l in leads
+        if l.get("pipeline_stage") not in CLOSED_DETAIL_STAGES
+        and effective_pipeline_stage(l) != "Closed"
+        and (_is_crusher_queue_lead(l) or l.get("assigned_to_branton"))
+    ]
+    if not pool:
+        pool = [
+            l for l in leads
+            if l.get("pipeline_stage") not in CLOSED_DETAIL_STAGES
+            and effective_pipeline_stage(l) != "Closed"
+        ]
+
+    pool.sort(
+        key=lambda x: (
+            0 if x.get("vacant_likely") else 1,
+            0 if _is_hot_lead(x) else 1,
+            -int(x.get("score") or 0),
+            0 if x.get("assigned_to_branton") else 1,
+            x.get("follow_up_iso", "9999-12-31"),
+        )
+    )
+    return pool[:limit]
+
+
+def lead_to_parsed_dict(lead: dict) -> dict:
+    return {
+        "decedent": lead.get("decedent", "Unknown Decedent"),
+        "address": lead.get("address", "Address TBD"),
+        "county": lead.get("county", "Middle TN"),
+        "heirs": lead.get("heirs") or lead.get("contact_name") or "[Heir Name]",
+        "phone": lead.get("phone", ""),
+        "email": lead.get("email", ""),
+    }
+
+
+def generate_roadmap_message(lead: dict) -> str:
+    parsed = lead_to_parsed_dict(lead)
+    heir = (parsed["heirs"] or "[Heir Name]").split("(")[0].strip()
+    return f"""Hi {heir},
+
+Branton Walker here with Probate Guardians TN — on Scott Hardesty's team helping Middle Tennessee families with inherited property.
+
+Your free Probate Family Roadmap is ready: plain-English next steps, Muniment basics, and real options (fast cash, funded repairs, or list for maximum value).
+
+Property: {parsed['address']}
+County: {parsed['county']}
+
+No pressure, ever. Reply YES and we'll send it — or call/text 615-953-0758 anytime.
+
+— Branton Walker
+Probate Guardians TN · Serving all of Middle Tennessee"""
+
+
+def _enter_branton_call_mode() -> None:
+    st.session_state.branton_call_mode = True
+
+
+def _exit_branton_call_mode() -> None:
+    st.session_state.branton_call_mode = False
+    st.session_state.pop("call_mode_panel", None)
+
+
+def _call_mode_show_script(lead_id: str) -> None:
+    st.session_state.call_mode_panel = {"lead_id": lead_id, "type": "script"}
+
+
+def _call_mode_show_roadmap(lead_id: str) -> None:
+    st.session_state.call_mode_panel = {"lead_id": lead_id, "type": "roadmap"}
+
+
+def _call_mode_mark_contacted(lead_id: str) -> None:
+    log_call(lead_id)
+    update_lead(lead_id, pipeline_stage="Warm / Talking", status="Contacted")
+    add_note(lead_id, "Call Mode: Marked Contacted", author=PARTNER_NAME)
+
+
+def _call_mode_set_stage(lead_id: str, stage: str, status: str, label: str) -> None:
+    update_lead(lead_id, pipeline_stage=stage, status=status)
+    add_note(lead_id, f"Call Mode: {label}", author=PARTNER_NAME)
+
+
 def import_leads_from_text(text: str, source: str = "import") -> int:
     blocks = [b.strip() for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
     count = 0
@@ -3298,340 +3431,426 @@ with tab_dashboard:
     if st.session_state.pop("_notes_loaded_banner_pending", False):
         st.success("✅ All notes loaded safely")
 
-    st.session_state.setdefault("crm_list_mode", "all")
-    st.session_state.setdefault("crm_pipe_filter", "All")
 
-    st.markdown('<div class="crm-top-filters-start"></div>', unsafe_allow_html=True)
-    due_col, _ = st.columns([1, 4], gap="small")
-    with due_col:
-        st.button(
-            "📅 Do Today",
-            key="crm_due_today_btn",
-            use_container_width=True,
-            type="primary",
-            on_click=_set_due_today_list_mode,
+    st.session_state.setdefault("branton_call_mode", False)
+    st.session_state.setdefault("call_mode_panel", {})
+
+    if st.session_state.branton_call_mode:
+        hdr_l, hdr_r = st.columns([2, 1])
+        with hdr_l:
+            st.markdown("## 📞 Branton Call Mode")
+            st.caption("Focus only — hottest Crusher leads. Call, text, move pipeline.")
+        with hdr_r:
+            st.button(
+                "Exit Call Mode — Back to Full System",
+                key="exit_call_mode",
+                use_container_width=True,
+                on_click=_exit_branton_call_mode,
+            )
+
+        st.markdown('<div class="call-mode-paste-marker"></div>', unsafe_allow_html=True)
+        call_paste = st.text_area(
+            "Quick paste — push hottest to your queue",
+            height=140,
+            placeholder="Paste court batch here…",
+            key="call_mode_paste",
+            label_visibility="collapsed",
         )
-
-    analytics = compute_analytics(get_leads())
-
-    st.markdown("### 📈 Analytics")
-    m1, m2, m3, m4, m5, m6 = st.columns(6)
-    m1.metric("Total Leads", analytics["total"])
-    m2.metric("Total Calls", analytics["total_calls"])
-    m3.metric("Avg Calls/Lead", analytics["avg_calls"])
-    m4.metric("→ Warm %", f"{analytics['conv_warm']}%")
-    m5.metric("→ Appt %", f"{analytics['conv_appt']}%")
-    m6.metric("Closed %", f"{analytics['conv_close']}%")
-
-    pcols = st.columns(5)
-    for i, stage in enumerate(PIPELINE_STAGES):
-        pcols[i].metric(stage, analytics["stages"][stage])
-
-    ins1, ins2 = st.columns(2)
-    with ins1:
-        st.markdown("**🏆 Top Counties**")
-        if analytics["top_counties"]:
-            for county, cnt in analytics["top_counties"]:
-                st.markdown(f"- **{county}** — {cnt} leads")
-        else:
-            st.caption("Import leads to see county breakdown.")
-    with ins2:
-        st.markdown("**✅ What's Working**")
-        if analytics["total"] > 0:
-            best = analytics["top_counties"][0][0] if analytics["top_counties"] else "Wilson County"
-            st.markdown(f"- **Best county:** {best}")
-            st.markdown(f"- **Branton assignments:** {analytics['branton_count']} active")
-            st.markdown(f"- **Follow-ups due today:** {analytics['due_today']}")
-            top_src = max(analytics["sources"], key=analytics["sources"].get) if analytics["sources"] else "workflow"
-            st.markdown(f"- **Top lead source:** {top_src}")
-        else:
-            st.caption("Start in Wilson County · use Bulk Qualifier · assign to Branton.")
-
-    st.markdown("---")
-    st.markdown('<div class="export-notes-marker"></div>', unsafe_allow_html=True)
-    st.download_button(
-        label="📥 Export All Notes to CSV",
-        data=build_notes_export_csv(get_leads()),
-        file_name=f"probate_notes_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv",
-        use_container_width=True,
-        key="export_all_notes_csv",
-    )
-
-    st.markdown("---")
-    dash_tab1, dash_tab2, dash_tab3 = st.tabs(["📋 Leads Table", "📅 Follow-Up Scheduler", "📥 Import Leads"])
-
-    with dash_tab3:
-        st.markdown("**Paste county data** (blank line between leads) or **upload CSV**.")
-        import_text = st.text_area("Bulk Import", height=160, key="crm_import_text", placeholder="Estate of...\nAddress...\nWilson County")
-        ic1, ic2 = st.columns(2)
-        with ic1:
-            if st.button("Import Pasted Leads", use_container_width=True, type="primary"):
-                if import_text.strip():
-                    n = import_leads_from_text(import_text, source="paste")
-                    st.success(f"✅ Imported {n} leads.")
-                    st.rerun()
-                else:
-                    st.warning("Paste lead data first.")
-        with ic2:
-            csv_file = st.file_uploader("Upload CSV", type=["csv"], key="crm_csv")
-            if csv_file and st.button("Import CSV", use_container_width=True):
-                n = import_leads_from_csv(csv_file.getvalue())
-                st.success(f"✅ Imported {n} leads from CSV.")
+        if st.button("🚀 Push Hottest", key="call_mode_push", use_container_width=True, type="primary"):
+            if not call_paste.strip():
+                st.warning("Paste leads first.")
+            else:
+                rows = crusher_score_batch(call_paste)
+                added = crusher_push_to_call_queue(rows)
+                vacant_n = sum(1 for r in rows if r.get("vacant_likely"))
+                record_crusher_vacant_flags(vacant_n)
+                st.success(f"✅ Pushed **{added}** hottest leads to queue.")
                 st.rerun()
 
-    with dash_tab2:
-        st.markdown("**Leads due for follow-up** (today or overdue, not Closed)")
-        today = datetime.now().strftime("%Y-%m-%d")
-        due_leads = [
-            l for l in st.session_state.leads
-            if l.get("follow_up_iso", "9999") <= today and effective_pipeline_stage(l) != "Closed"
-        ]
-        due_leads.sort(key=lambda x: x.get("follow_up_iso", ""))
-        if not due_leads:
-            st.success("No follow-ups due — you're caught up!")
-        for lead in due_leads:
-            with st.expander(f"📅 {lead.get('decedent')} — due {lead.get('follow_up_iso')} · {lead.get('pipeline_stage')}"):
-                st.markdown(f"**{lead.get('address')}** · {lead.get('phone', 'No phone')}")
-                new_date = st.date_input(
-                    "Reschedule",
-                    value=datetime.strptime(lead.get("follow_up_iso", today), "%Y-%m-%d").date(),
-                    key=f"sched_{lead['id']}",
-                )
-                if st.button("Save Follow-Up Date", key=f"savefu_{lead['id']}"):
-                    update_lead(lead["id"], follow_up_iso=new_date.strftime("%Y-%m-%d"))
-                    st.rerun()
-                if st.button("Log Call + Move to Warm", key=f"schedcall_{lead['id']}"):
-                    log_call(lead["id"])
-                    update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
-                    st.rerun()
-
-    with dash_tab1:
-        fc1, fc2, fc3 = st.columns(3)
-        with fc1:
-            pipe_filter = st.selectbox(
-                "Pipeline",
-                ["All"] + PIPELINE_STAGES,
-                key="crm_pipe_filter",
-                on_change=_on_top_pipe_filter_change,
+        hot_leads = get_branton_call_mode_leads(get_leads(), limit=10)
+        if not hot_leads:
+            st.info("No hot leads yet — paste above and tap **Push Hottest**, or use the Crusher tab.")
+        for lead in hot_leads:
+            vacant = lead.get("vacant_likely")
+            card_class = "call-mode-lead-card call-mode-vacant" if vacant else "call-mode-lead-card"
+            fire = " 🔥 Likely Vacant" if vacant else ""
+            st.markdown(
+                f'<div class="{card_class}">'
+                f'<p class="call-mode-lead-title">{html.escape(lead.get("decedent", "Unknown"))}{fire}</p>'
+                f'<p style="color:#8b949e;margin:0;font-size:0.9rem;">'
+                f'{html.escape(lead.get("address", "—"))}</p>'
+                f'<p style="color:#3fb950;margin:0.35rem 0 0 0;font-weight:700;">'
+                f'{html.escape(_lead_call_line(lead))}</p>'
+                f'</div>',
+                unsafe_allow_html=True,
             )
-        with fc2:
-            branton_filter = st.selectbox("Assignment", ["All", f"Assigned to {PARTNER_NAME}", "Unassigned"], key="crm_branton_filter")
-        with fc3:
-            county_filter = st.selectbox(
-                "County",
-                ["All"] + sorted({l.get("county", "") for l in st.session_state.leads if l.get("county")}),
-                key="crm_county_filter",
-            )
+            st.markdown('<div class="call-mode-thumb-start"></div>', unsafe_allow_html=True)
+            b1, b2, b3, b4, b5, b6 = st.columns(6)
+            lid = lead["id"]
+            with b1:
+                st.button("Call Script", key=f"cm_script_{lid}", use_container_width=True, on_click=_call_mode_show_script, args=(lid,))
+            with b2:
+                st.button("Send Roadmap", key=f"cm_road_{lid}", use_container_width=True, on_click=_call_mode_show_roadmap, args=(lid,))
+            with b3:
+                st.button("Mark Contacted", key=f"cm_cont_{lid}", use_container_width=True, on_click=_call_mode_mark_contacted, args=(lid,))
+            with b4:
+                st.button("Appt Set", key=f"cm_appt_{lid}", use_container_width=True, on_click=_call_mode_set_stage, args=(lid, "Appointment Set", "Qualified", "Appt Set"))
+            with b5:
+                st.button("Listed", key=f"cm_list_{lid}", use_container_width=True, on_click=_call_mode_set_stage, args=(lid, "Listed / Under Contract", "Under Contract", "Listed"))
+            with b6:
+                st.button("Closed", key=f"cm_close_{lid}", use_container_width=True, on_click=_call_mode_set_stage, args=(lid, "Closed / Sold", "Closed", "Closed"))
 
-        filtered = st.session_state.leads
-        if pipe_filter != "All":
-            filtered = [l for l in filtered if effective_pipeline_stage(l) == pipe_filter]
-        if branton_filter == f"Assigned to {PARTNER_NAME}":
-            filtered = [l for l in filtered if l.get("assigned_to_branton")]
-        elif branton_filter == "Unassigned":
-            filtered = [l for l in filtered if not l.get("assigned_to_branton")]
-        if county_filter != "All":
-            filtered = [l for l in filtered if l.get("county") == county_filter]
+            panel = st.session_state.get("call_mode_panel") or {}
+            if panel.get("lead_id") == lid:
+                if panel.get("type") == "script":
+                    st.text_area("Call Script", generate_phone_script(lead_to_parsed_dict(lead)), height=320, key=f"cm_script_txt_{lid}")
+                elif panel.get("type") == "roadmap":
+                    st.text_area("Send Roadmap (copy & text/email)", generate_roadmap_message(lead), height=220, key=f"cm_road_txt_{lid}")
 
-        if st.session_state.get("crm_list_mode") == "due_today":
-            list_base = list(st.session_state.leads)
-            if branton_filter == f"Assigned to {PARTNER_NAME}":
-                list_base = [l for l in list_base if l.get("assigned_to_branton")]
-            elif branton_filter == "Unassigned":
-                list_base = [l for l in list_base if not l.get("assigned_to_branton")]
-            if county_filter != "All":
-                list_base = [l for l in list_base if l.get("county") == county_filter]
-            list_filtered = _filter_leads_due_today(list_base)
-        else:
-            list_filtered = filtered
-
-        filter_bits = []
-        if st.session_state.get("crm_list_mode") == "due_today":
-            filter_bits.append("due today + 🔥 Hot")
-        elif pipe_filter != "All":
-            filter_bits.append(pipe_filter)
-        filter_note = f" · List: **{', '.join(filter_bits)}**" if filter_bits else ""
-        st.caption(
-            f"Showing **{len(list_filtered)}** in list / **{len(filtered)}** matched / "
-            f"**{len(st.session_state.leads)}** total{filter_note}"
+    if not st.session_state.branton_call_mode:
+        st.markdown('<div class="call-mode-enter-marker"></div>', unsafe_allow_html=True)
+        st.button(
+            "📞 Branton Call Mode — Focus Only",
+            key="enter_call_mode",
+            use_container_width=True,
+            type="primary",
+            on_click=_enter_branton_call_mode,
         )
 
-        if not list_filtered:
-            st.info(
-                "No leads match the current filter. "
-                "Set **Pipeline** to **All** to show every lead, or tap **📅 Do Today** for today's calls."
+        st.session_state.setdefault("crm_list_mode", "all")
+        st.session_state.setdefault("crm_pipe_filter", "All")
+
+        st.markdown('<div class="crm-top-filters-start"></div>', unsafe_allow_html=True)
+        due_col, _ = st.columns([1, 4], gap="small")
+        with due_col:
+            st.button(
+                "📅 Do Today",
+                key="crm_due_today_btn",
+                use_container_width=True,
+                type="primary",
+                on_click=_set_due_today_list_mode,
             )
-        else:
-            list_ids = {l["id"] for l in list_filtered}
-            if st.session_state.get("crm_selected_lead_id") not in list_ids:
-                _flush_dash_notes(st.session_state.get("crm_selected_lead_id"), show_saved=True)
-                st.session_state.crm_selected_lead_id = list_filtered[0]["id"]
-                st.session_state.pop("_dash_notes_sync_id", None)
 
-            list_col, detail_col = st.columns([2, 3], gap="medium")
+        analytics = compute_analytics(get_leads())
 
-            with list_col:
-                st.markdown("**Leads**")
-                with st.container(height=520):
-                    for item in list_filtered:
-                        is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
+        st.markdown("### 📈 Analytics")
+        m1, m2, m3, m4, m5, m6 = st.columns(6)
+        m1.metric("Total Leads", analytics["total"])
+        m2.metric("Total Calls", analytics["total_calls"])
+        m3.metric("Avg Calls/Lead", analytics["avg_calls"])
+        m4.metric("→ Warm %", f"{analytics['conv_warm']}%")
+        m5.metric("→ Appt %", f"{analytics['conv_appt']}%")
+        m6.metric("Closed %", f"{analytics['conv_close']}%")
+
+        pcols = st.columns(5)
+        for i, stage in enumerate(PIPELINE_STAGES):
+            pcols[i].metric(stage, analytics["stages"][stage])
+
+        ins1, ins2 = st.columns(2)
+        with ins1:
+            st.markdown("**🏆 Top Counties**")
+            if analytics["top_counties"]:
+                for county, cnt in analytics["top_counties"]:
+                    st.markdown(f"- **{county}** — {cnt} leads")
+            else:
+                st.caption("Import leads to see county breakdown.")
+        with ins2:
+            st.markdown("**✅ What's Working**")
+            if analytics["total"] > 0:
+                best = analytics["top_counties"][0][0] if analytics["top_counties"] else "Wilson County"
+                st.markdown(f"- **Best county:** {best}")
+                st.markdown(f"- **Branton assignments:** {analytics['branton_count']} active")
+                st.markdown(f"- **Follow-ups due today:** {analytics['due_today']}")
+                top_src = max(analytics["sources"], key=analytics["sources"].get) if analytics["sources"] else "workflow"
+                st.markdown(f"- **Top lead source:** {top_src}")
+            else:
+                st.caption("Start in Wilson County · use Bulk Qualifier · assign to Branton.")
+
+        st.markdown("---")
+        st.markdown('<div class="export-notes-marker"></div>', unsafe_allow_html=True)
+        st.download_button(
+            label="📥 Export All Notes to CSV",
+            data=build_notes_export_csv(get_leads()),
+            file_name=f"probate_notes_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv",
+            use_container_width=True,
+            key="export_all_notes_csv",
+        )
+
+        st.markdown("---")
+        dash_tab1, dash_tab2, dash_tab3 = st.tabs(["📋 Leads Table", "📅 Follow-Up Scheduler", "📥 Import Leads"])
+
+        with dash_tab3:
+            st.markdown("**Paste county data** (blank line between leads) or **upload CSV**.")
+            import_text = st.text_area("Bulk Import", height=160, key="crm_import_text", placeholder="Estate of...\nAddress...\nWilson County")
+            ic1, ic2 = st.columns(2)
+            with ic1:
+                if st.button("Import Pasted Leads", use_container_width=True, type="primary"):
+                    if import_text.strip():
+                        n = import_leads_from_text(import_text, source="paste")
+                        st.success(f"✅ Imported {n} leads.")
+                        st.rerun()
+                    else:
+                        st.warning("Paste lead data first.")
+            with ic2:
+                csv_file = st.file_uploader("Upload CSV", type=["csv"], key="crm_csv")
+                if csv_file and st.button("Import CSV", use_container_width=True):
+                    n = import_leads_from_csv(csv_file.getvalue())
+                    st.success(f"✅ Imported {n} leads from CSV.")
+                    st.rerun()
+
+        with dash_tab2:
+            st.markdown("**Leads due for follow-up** (today or overdue, not Closed)")
+            today = datetime.now().strftime("%Y-%m-%d")
+            due_leads = [
+                l for l in st.session_state.leads
+                if l.get("follow_up_iso", "9999") <= today and effective_pipeline_stage(l) != "Closed"
+            ]
+            due_leads.sort(key=lambda x: x.get("follow_up_iso", ""))
+            if not due_leads:
+                st.success("No follow-ups due — you're caught up!")
+            for lead in due_leads:
+                with st.expander(f"📅 {lead.get('decedent')} — due {lead.get('follow_up_iso')} · {lead.get('pipeline_stage')}"):
+                    st.markdown(f"**{lead.get('address')}** · {lead.get('phone', 'No phone')}")
+                    new_date = st.date_input(
+                        "Reschedule",
+                        value=datetime.strptime(lead.get("follow_up_iso", today), "%Y-%m-%d").date(),
+                        key=f"sched_{lead['id']}",
+                    )
+                    if st.button("Save Follow-Up Date", key=f"savefu_{lead['id']}"):
+                        update_lead(lead["id"], follow_up_iso=new_date.strftime("%Y-%m-%d"))
+                        st.rerun()
+                    if st.button("Log Call + Move to Warm", key=f"schedcall_{lead['id']}"):
+                        log_call(lead["id"])
+                        update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
+                        st.rerun()
+
+        with dash_tab1:
+            fc1, fc2, fc3 = st.columns(3)
+            with fc1:
+                pipe_filter = st.selectbox(
+                    "Pipeline",
+                    ["All"] + PIPELINE_STAGES,
+                    key="crm_pipe_filter",
+                    on_change=_on_top_pipe_filter_change,
+                )
+            with fc2:
+                branton_filter = st.selectbox("Assignment", ["All", f"Assigned to {PARTNER_NAME}", "Unassigned"], key="crm_branton_filter")
+            with fc3:
+                county_filter = st.selectbox(
+                    "County",
+                    ["All"] + sorted({l.get("county", "") for l in st.session_state.leads if l.get("county")}),
+                    key="crm_county_filter",
+                )
+
+            filtered = st.session_state.leads
+            if pipe_filter != "All":
+                filtered = [l for l in filtered if effective_pipeline_stage(l) == pipe_filter]
+            if branton_filter == f"Assigned to {PARTNER_NAME}":
+                filtered = [l for l in filtered if l.get("assigned_to_branton")]
+            elif branton_filter == "Unassigned":
+                filtered = [l for l in filtered if not l.get("assigned_to_branton")]
+            if county_filter != "All":
+                filtered = [l for l in filtered if l.get("county") == county_filter]
+
+            if st.session_state.get("crm_list_mode") == "due_today":
+                list_base = list(st.session_state.leads)
+                if branton_filter == f"Assigned to {PARTNER_NAME}":
+                    list_base = [l for l in list_base if l.get("assigned_to_branton")]
+                elif branton_filter == "Unassigned":
+                    list_base = [l for l in list_base if not l.get("assigned_to_branton")]
+                if county_filter != "All":
+                    list_base = [l for l in list_base if l.get("county") == county_filter]
+                list_filtered = _filter_leads_due_today(list_base)
+            else:
+                list_filtered = filtered
+
+            filter_bits = []
+            if st.session_state.get("crm_list_mode") == "due_today":
+                filter_bits.append("due today + 🔥 Hot")
+            elif pipe_filter != "All":
+                filter_bits.append(pipe_filter)
+            filter_note = f" · List: **{', '.join(filter_bits)}**" if filter_bits else ""
+            st.caption(
+                f"Showing **{len(list_filtered)}** in list / **{len(filtered)}** matched / "
+                f"**{len(st.session_state.leads)}** total{filter_note}"
+            )
+
+            if not list_filtered:
+                st.info(
+                    "No leads match the current filter. "
+                    "Set **Pipeline** to **All** to show every lead, or tap **📅 Do Today** for today's calls."
+                )
+            else:
+                list_ids = {l["id"] for l in list_filtered}
+                if st.session_state.get("crm_selected_lead_id") not in list_ids:
+                    _flush_dash_notes(st.session_state.get("crm_selected_lead_id"), show_saved=True)
+                    st.session_state.crm_selected_lead_id = list_filtered[0]["id"]
+                    st.session_state.pop("_dash_notes_sync_id", None)
+
+                list_col, detail_col = st.columns([2, 3], gap="medium")
+
+                with list_col:
+                    st.markdown("**Leads**")
+                    with st.container(height=520):
+                        for item in list_filtered:
+                            is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
+                            st.markdown(
+                                f'<div class="crm-lead-call-line">{html.escape(_lead_call_line(item))}</div>',
+                                unsafe_allow_html=True,
+                            )
+                            if st.button(
+                                _lead_list_button_label(item),
+                                key=f"pick_{item['id']}",
+                                use_container_width=True,
+                                type="primary" if is_selected else "secondary",
+                            ):
+                                _select_crm_lead(item["id"])
+                                st.rerun()
+
+                selected_id = st.session_state.get("crm_selected_lead_id")
+                lead = find_lead(selected_id)
+
+                with detail_col:
+                    st.markdown("#### Lead Detail & Edit")
+
+                    if not lead:
+                        st.info("Select a lead from the list.")
+                    else:
                         st.markdown(
-                            f'<div class="crm-lead-call-line">{html.escape(_lead_call_line(item))}</div>',
+                            '<div class="crm-lead-primary-contact">'
+                            f"Primary Contact: {html.escape(_lead_primary_contact_line(lead))}"
+                            "</div>",
                             unsafe_allow_html=True,
                         )
-                        if st.button(
-                            _lead_list_button_label(item),
-                            key=f"pick_{item['id']}",
-                            use_container_width=True,
-                            type="primary" if is_selected else "secondary",
-                        ):
-                            _select_crm_lead(item["id"])
-                            st.rerun()
-
-            selected_id = st.session_state.get("crm_selected_lead_id")
-            lead = find_lead(selected_id)
-
-            with detail_col:
-                st.markdown("#### Lead Detail & Edit")
-
-                if not lead:
-                    st.info("Select a lead from the list.")
-                else:
-                    st.markdown(
-                        '<div class="crm-lead-primary-contact">'
-                        f"Primary Contact: {html.escape(_lead_primary_contact_line(lead))}"
-                        "</div>",
-                        unsafe_allow_html=True,
-                    )
-                    e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
-                    current_stage = detail_pipeline_stage(lead)
-                    with e1:
-                        new_stage = st.selectbox(
-                            "Pipeline Stage",
-                            DETAIL_PIPELINE_STAGES,
-                            index=DETAIL_PIPELINE_STAGES.index(current_stage),
-                            key=f"stage_{lead['id']}",
-                            on_change=_on_detail_pipeline_change,
-                            args=(lead["id"],),
-                        )
-                    with e2:
-                        fu_label = "Next Follow-up Date" if new_stage == NURTURE_STAGE else "Follow-Up"
-                        new_fu = st.date_input(
-                            fu_label,
-                            value=datetime.strptime(lead.get("follow_up_iso", follow_up_iso()), "%Y-%m-%d").date(),
-                            key=f"fu_{lead['id']}",
-                        )
-                    with e3:
-                        branton_toggle = st.toggle(
-                            f"Assign to {PARTNER_NAME}",
-                            value=bool(lead.get("assigned_to_branton")),
-                            key=f"branton_{lead['id']}",
-                        )
-                    with e4:
-                        st.metric("Calls", lead.get("calls", 0))
-
-                    st.markdown('<div class="crm-quick-stage-start"></div>', unsafe_allow_html=True)
-                    qs1, qs2, qs3, qs4, qs5 = st.columns(5, gap="small")
-                    with qs1:
-                        st.button(
-                            "🔥 Move to Hot",
-                            key=f"qhot_{lead['id']}",
-                            use_container_width=True,
-                            type="primary",
-                            on_click=_quick_stage_callback,
-                            args=(lead["id"], "🔥 Hot / New (call today)"),
-                        )
-                    with qs2:
-                        st.button(
-                            "Move to Warm",
-                            key=f"qwarm_{lead['id']}",
-                            use_container_width=True,
-                            on_click=_quick_stage_callback,
-                            args=(lead["id"], "Warm / Talking"),
-                        )
-                    with qs3:
-                        st.button(
-                            "Set Appointment",
-                            key=f"qappt_{lead['id']}",
-                            use_container_width=True,
-                            on_click=_quick_stage_callback,
-                            args=(lead["id"], "Appointment Set"),
-                        )
-                    with qs4:
-                        st.button(
-                            "Not Interested",
-                            key=f"qni_{lead['id']}",
-                            use_container_width=True,
-                            on_click=_quick_stage_callback,
-                            args=(lead["id"], "Not Interested / Keeping"),
-                        )
-                    with qs5:
-                        st.button(
-                            "Archive",
-                            key=f"qarch_{lead['id']}",
-                            use_container_width=True,
-                            on_click=_quick_stage_callback,
-                            args=(lead["id"], "Archived"),
-                        )
-
-                    st.caption(
-                        f"**{lead.get('decedent', 'Unknown')}** · {lead.get('address', '—')} · "
-                        f"Score **{lead.get('score', 0)}** · {lead.get('county', '—')}"
-                    )
-
-                    note_text = st.text_area(
-                        "Add Note",
-                        key=f"note_{lead['id']}",
-                        placeholder="Call outcome, heir feedback, next steps...",
-                    )
-                    b1, b2, b3, b4 = st.columns(4)
-                    with b1:
-                        if st.button("💾 Save Changes", key=f"save_{lead['id']}", use_container_width=True, type="primary"):
-                            _flush_dash_notes(lead["id"], show_saved=True)
-                            update_lead(
-                                lead["id"],
-                                pipeline_stage=new_stage,
-                                follow_up_iso=new_fu.strftime("%Y-%m-%d"),
-                                assigned_to_branton=branton_toggle,
-                                status="Closed" if new_stage in CLOSED_DETAIL_STAGES else lead.get("status", "New"),
+                        e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
+                        current_stage = detail_pipeline_stage(lead)
+                        with e1:
+                            new_stage = st.selectbox(
+                                "Pipeline Stage",
+                                DETAIL_PIPELINE_STAGES,
+                                index=DETAIL_PIPELINE_STAGES.index(current_stage),
+                                key=f"stage_{lead['id']}",
+                                on_change=_on_detail_pipeline_change,
+                                args=(lead["id"],),
                             )
-                            if note_text.strip():
-                                add_note(lead["id"], note_text, author=PARTNER_NAME if branton_toggle else "Scott")
-                            st.session_state.pop("_dash_notes_sync_id", None)
-                            st.rerun()
-                    with b2:
-                        if st.button("📞 Log Call", key=f"call_{lead['id']}", use_container_width=True):
-                            _flush_dash_notes(lead["id"], show_saved=True)
-                            log_call(lead["id"])
-                            st.rerun()
-                    with b3:
-                        if st.button("⬆️ → Warm", key=f"warm_{lead['id']}", use_container_width=True):
-                            _flush_dash_notes(lead["id"], show_saved=True)
-                            update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
-                            st.rerun()
-                    with b4:
-                        if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
-                            _flush_dash_notes(lead["id"], show_saved=True)
-                            st.session_state.leads = [l for l in st.session_state.leads if l["id"] != lead["id"]]
-                            persist_leads()
-                            st.session_state.pop("crm_selected_lead_id", None)
-                            st.session_state.pop("_dash_notes_sync_id", None)
-                            st.rerun()
+                        with e2:
+                            fu_label = "Next Follow-up Date" if new_stage == NURTURE_STAGE else "Follow-Up"
+                            new_fu = st.date_input(
+                                fu_label,
+                                value=datetime.strptime(lead.get("follow_up_iso", follow_up_iso()), "%Y-%m-%d").date(),
+                                key=f"fu_{lead['id']}",
+                            )
+                        with e3:
+                            branton_toggle = st.toggle(
+                                f"Assign to {PARTNER_NAME}",
+                                value=bool(lead.get("assigned_to_branton")),
+                                key=f"branton_{lead['id']}",
+                            )
+                        with e4:
+                            st.metric("Calls", lead.get("calls", 0))
 
-                    _render_lead_notes_editor(lead)
-                    if lead.get("days_since_death") is not None:
+                        st.markdown('<div class="crm-quick-stage-start"></div>', unsafe_allow_html=True)
+                        qs1, qs2, qs3, qs4, qs5 = st.columns(5, gap="small")
+                        with qs1:
+                            st.button(
+                                "🔥 Move to Hot",
+                                key=f"qhot_{lead['id']}",
+                                use_container_width=True,
+                                type="primary",
+                                on_click=_quick_stage_callback,
+                                args=(lead["id"], "🔥 Hot / New (call today)"),
+                            )
+                        with qs2:
+                            st.button(
+                                "Move to Warm",
+                                key=f"qwarm_{lead['id']}",
+                                use_container_width=True,
+                                on_click=_quick_stage_callback,
+                                args=(lead["id"], "Warm / Talking"),
+                            )
+                        with qs3:
+                            st.button(
+                                "Set Appointment",
+                                key=f"qappt_{lead['id']}",
+                                use_container_width=True,
+                                on_click=_quick_stage_callback,
+                                args=(lead["id"], "Appointment Set"),
+                            )
+                        with qs4:
+                            st.button(
+                                "Not Interested",
+                                key=f"qni_{lead['id']}",
+                                use_container_width=True,
+                                on_click=_quick_stage_callback,
+                                args=(lead["id"], "Not Interested / Keeping"),
+                            )
+                        with qs5:
+                            st.button(
+                                "Archive",
+                                key=f"qarch_{lead['id']}",
+                                use_container_width=True,
+                                on_click=_quick_stage_callback,
+                                args=(lead["id"], "Archived"),
+                            )
+
                         st.caption(
-                            f"Death ~{lead.get('days_since_death')} days ago · "
-                            f"Status: **{lead.get('status', '—')}** · Pipeline: **{lead.get('pipeline_stage', '—')}**"
+                            f"**{lead.get('decedent', 'Unknown')}** · {lead.get('address', '—')} · "
+                            f"Score **{lead.get('score', 0)}** · {lead.get('county', '—')}"
                         )
 
-                    if lead.get("activity"):
-                        st.markdown("**Activity**")
-                        for act in lead["activity"][:5]:
-                            st.caption(f"{act.get('ts', '')[:16]} · {act.get('type', '')} · {act.get('detail', '')}")
+                        note_text = st.text_area(
+                            "Add Note",
+                            key=f"note_{lead['id']}",
+                            placeholder="Call outcome, heir feedback, next steps...",
+                        )
+                        b1, b2, b3, b4 = st.columns(4)
+                        with b1:
+                            if st.button("💾 Save Changes", key=f"save_{lead['id']}", use_container_width=True, type="primary"):
+                                _flush_dash_notes(lead["id"], show_saved=True)
+                                update_lead(
+                                    lead["id"],
+                                    pipeline_stage=new_stage,
+                                    follow_up_iso=new_fu.strftime("%Y-%m-%d"),
+                                    assigned_to_branton=branton_toggle,
+                                    status="Closed" if new_stage in CLOSED_DETAIL_STAGES else lead.get("status", "New"),
+                                )
+                                if note_text.strip():
+                                    add_note(lead["id"], note_text, author=PARTNER_NAME if branton_toggle else "Scott")
+                                st.session_state.pop("_dash_notes_sync_id", None)
+                                st.rerun()
+                        with b2:
+                            if st.button("📞 Log Call", key=f"call_{lead['id']}", use_container_width=True):
+                                _flush_dash_notes(lead["id"], show_saved=True)
+                                log_call(lead["id"])
+                                st.rerun()
+                        with b3:
+                            if st.button("⬆️ → Warm", key=f"warm_{lead['id']}", use_container_width=True):
+                                _flush_dash_notes(lead["id"], show_saved=True)
+                                update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
+                                st.rerun()
+                        with b4:
+                            if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
+                                _flush_dash_notes(lead["id"], show_saved=True)
+                                st.session_state.leads = [l for l in st.session_state.leads if l["id"] != lead["id"]]
+                                persist_leads()
+                                st.session_state.pop("crm_selected_lead_id", None)
+                                st.session_state.pop("_dash_notes_sync_id", None)
+                                st.rerun()
 
-# ══════════════════════════════════════════════════════════════════════════════
+                        _render_lead_notes_editor(lead)
+                        if lead.get("days_since_death") is not None:
+                            st.caption(
+                                f"Death ~{lead.get('days_since_death')} days ago · "
+                                f"Status: **{lead.get('status', '—')}** · Pipeline: **{lead.get('pipeline_stage', '—')}**"
+                            )
+
+                        if lead.get("activity"):
+                            st.markdown("**Activity**")
+                            for act in lead["activity"][:5]:
+                                st.caption(f"{act.get('ts', '')[:16]} · {act.get('type', '')} · {act.get('detail', '')}")
+
+    # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 💰 90-Day Probate Crusher
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_crusher:
