@@ -14,6 +14,9 @@ from pathlib import Path
 
 import streamlit as st
 
+st.cache_data.clear = lambda: None
+st.cache_resource.clear = lambda: None
+
 # ── Constants ────────────────────────────────────────────────────────────────
 PARTNER_NAME = "Branton Walker"
 ASSIGN_STATUS = f"Assigned to {PARTNER_NAME}"
