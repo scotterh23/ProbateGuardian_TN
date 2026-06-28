@@ -3,6 +3,7 @@ import csv
 import html
 import io
 import json
+import math
 import os
 import re
 import time
@@ -245,6 +246,29 @@ st.markdown(
         white-space: normal !important;
         line-height: 1.25 !important;
         padding: 0.55rem 0.45rem !important;
+    }
+    .crusher-glow-marker { display: none; }
+    .crusher-glow-marker + div [data-testid="stTextArea"] textarea {
+        min-height: 14rem !important;
+        font-size: 1rem !important;
+        border: 2px solid #3fb950 !important;
+        box-shadow: 0 0 22px rgba(63, 185, 80, 0.42), inset 0 0 12px rgba(63, 185, 80, 0.08) !important;
+    }
+    .crusher-title {
+        font-size: 1.55rem;
+        font-weight: 800;
+        color: #f0b429 !important;
+        margin: 0.25rem 0 0.5rem 0;
+    }
+    .crusher-vacant-pill {
+        display: inline-block;
+        background: linear-gradient(135deg, #b62324, #ff7b72);
+        color: #fff;
+        font-weight: 700;
+        padding: 0.2rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.82rem;
+        margin-left: 0.35rem;
     }
     </style>
     """,
@@ -1399,6 +1423,509 @@ def score_lead(parsed: dict) -> tuple:
     return score, status, flags
 
 
+# ── 90-Day Probate Crusher — vacant scoring & flexible bulk parse ─────────────
+VACANT_DISTANCE_MILES = 50
+CRUSHER_CASE_RE = re.compile(r"\b(PR\s*20\d{2}\s*[-–—]\s*\d+)\b", re.I)
+CRUSHER_STREET_RE = re.compile(
+    r"(\d+\s+[\w\s\.\#'-]+(?:Rd|Road|St|Street|Ave|Avenue|Dr|Drive|Ln|Lane|"
+    r"Ct|Court|Way|Blvd|Pike|Circle|Cir|Place|Pl|Trl|Trail|Ter|Terrace|Hwy|Highway)\.?,?\s*"
+    r"[\w\s,.'-]+(?:TN\s*\d{5}|\bNashville\b|\bTN\b|\d{5}))",
+    re.I,
+)
+CRUSHER_ZIP_RE = re.compile(r"\b(\d{5})\b")
+CRUSHER_OOS_RE = re.compile(
+    r",\s*(AL|AR|AZ|CA|CO|FL|GA|IL|IN|KS|KY|LA|MI|MO|MS|NC|NY|OH|OK|PA|SC|TX|VA|WA|WI)\s*(\d{5})?",
+    re.I,
+)
+CRUSHER_PR_LINE_RE = re.compile(
+    r"^(.+?),\s*(?:Administratrix|Executrix|Administrator|Executor|Personal Representative|PR)\b",
+    re.I | re.M,
+)
+CRUSHER_CASE_BULK_RE = re.compile(
+    r"^(PR\s*20\d{2}\s*[-–—]\s*\d+|PR\d{4}-\d+|26P\d+|20\d{2}P\d+).*$",
+    re.I,
+)
+
+TN_ZIP_GEO = {
+    "37013": (36.0606, -86.5736),
+    "37027": (36.0012, -86.7936),
+    "37064": (35.9251, -86.8689),
+    "37066": (36.3884, -86.4467),
+    "37067": (35.9806, -86.8128),
+    "37072": (36.5298, -86.8844),
+    "37075": (36.3206, -86.7133),
+    "37087": (36.2081, -86.2911),
+    "37115": (36.3134, -86.7133),
+    "37122": (36.2006, -86.5186),
+    "37127": (35.8234, -86.4103),
+    "37129": (35.8456, -86.3903),
+    "37130": (35.8460, -86.3920),
+    "37167": (35.6170, -86.8936),
+    "37174": (35.7853, -86.9169),
+    "37201": (36.1627, -86.7816),
+    "37203": (36.1500, -86.8025),
+    "37205": (36.1028, -86.8722),
+    "37206": (36.1810, -86.7350),
+    "37207": (36.2176, -86.7784),
+    "37209": (36.1536, -86.8570),
+    "37211": (36.0750, -86.7240),
+    "37214": (36.1450, -86.6600),
+    "37215": (36.1020, -86.8200),
+    "37217": (36.0830, -86.6400),
+    "37221": (36.0750, -86.9500),
+}
+
+
+def _haversine_miles(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 3958.8
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lon2 - lon1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return r * 2 * math.asin(math.sqrt(a))
+
+
+def _is_plausible_address(value: str) -> bool:
+    value = (value or "").strip()
+    if not value or len(value) < 6:
+        return False
+    return bool(re.search(r"\d+\s+\w", value)) and bool(
+        re.search(
+            r"(Rd|Road|St|Street|Ave|Avenue|Dr|Drive|Ln|Lane|Ct|Court|Way|Blvd|Pike|TN|\d{5})",
+            value,
+            re.I,
+        )
+    )
+
+
+def _looks_like_case_number(value: str) -> bool:
+    v = (value or "").strip()
+    return bool(CRUSHER_CASE_BULK_RE.match(v)) or bool(re.search(r"PR20\d{2}|26P\d+", v, re.I))
+
+
+def _looks_like_filing_date(value: str) -> bool:
+    return bool(re.match(r"^\d{1,2}/\d{1,2}/\d{2,4}$", (value or "").strip()))
+
+
+def _bulk_line_parts(line: str) -> list:
+    if "|" in line:
+        return [p.strip() for p in line.split("|")]
+    if "\t" in line:
+        return [p.strip() for p in line.split("\t")]
+    if "," in line and _is_plausible_address(line):
+        return [p.strip() for p in line.split(",")]
+    return [line.strip()]
+
+
+def _split_poc_field(poc_field: str) -> tuple:
+    poc = (poc_field or "").strip()
+    if not poc:
+        return "", ""
+    m = re.search(r"\(([^)]+)\)\s*$", poc)
+    if m:
+        return poc[: m.start()].strip(), m.group(1).strip()
+    m2 = CRUSHER_PR_LINE_RE.search(poc)
+    if m2:
+        return m2.group(1).strip(), "Personal Representative"
+    return poc, "Personal Representative"
+
+
+def _extract_phone_email_from_text(text: str) -> tuple:
+    blob = (text or "").strip()
+    phone = email = ""
+    pm = re.search(r"\(?\d{3}\)?[\s\-\.]?\d{3}[\s\-\.]?\d{4}", blob)
+    if pm:
+        phone = pm.group(0).strip()
+    em = re.search(r"[\w\.\-]+@[\w\.\-]+\.\w+", blob, re.I)
+    if em:
+        email = em.group(0).strip()
+    return phone, email
+
+
+def _extract_all_addresses(text: str) -> list:
+    found = []
+    seen = set()
+    for m in CRUSHER_STREET_RE.finditer(text or ""):
+        addr = re.sub(r"\s+", " ", m.group(1).strip())
+        key = addr.lower()
+        if key not in seen:
+            seen.add(key)
+            found.append(addr)
+    return found
+
+
+def _guess_pr_address(raw: str, property_addr: str) -> str:
+    text = raw or ""
+    prop_key = (property_addr or "").lower().strip()
+    for label in (
+        r"mailing\s+address[:\s]+(.+)",
+        r"address\s+of\s+(?:personal\s+representative|pr|petitioner)[:\s]+(.+)",
+        r"pr\s+address[:\s]+(.+)",
+        r"petitioner\s+address[:\s]+(.+)",
+    ):
+        m = re.search(label, text, re.I)
+        if m:
+            candidate = m.group(1).split("\n")[0].strip()
+            if _is_plausible_address(candidate):
+                return candidate
+
+    addresses = _extract_all_addresses(text)
+    for addr in addresses:
+        if addr.lower().strip() != prop_key:
+            return addr
+
+    for line in text.splitlines():
+        line = line.strip()
+        if _is_plausible_address(line) and line.lower().strip() != prop_key:
+            return line
+    return ""
+
+
+def _coords_for_address(addr: str):
+    if not addr:
+        return None
+    if CRUSHER_OOS_RE.search(addr) and not re.search(r"\bTN\b", addr, re.I):
+        return "OOS"
+    zips = CRUSHER_ZIP_RE.findall(addr)
+    for z in reversed(zips):
+        if z in TN_ZIP_GEO:
+            return TN_ZIP_GEO[z]
+    return None
+
+
+def _address_distance_miles(addr1: str, addr2: str):
+    if not addr1 or not addr2:
+        return None
+    a1 = addr1.strip()
+    a2 = addr2.strip()
+    if not a1 or not a2 or a1.lower() == a2.lower():
+        return 0.0
+    if CRUSHER_OOS_RE.search(a2) and not re.search(r"\bTN\b", a2, re.I):
+        return 750.0
+    if CRUSHER_OOS_RE.search(a1) and not re.search(r"\bTN\b", a1, re.I):
+        return 750.0
+    c1 = _coords_for_address(a1)
+    c2 = _coords_for_address(a2)
+    if c1 == "OOS" or c2 == "OOS":
+        return 600.0
+    if c1 and c2:
+        return round(_haversine_miles(c1[0], c1[1], c2[0], c2[1]), 1)
+    return None
+
+
+def _split_estate_chunks(text: str) -> list:
+    text = (text or "").strip()
+    if not text:
+        return []
+    if re.search(r"^Estate of ", text, re.I | re.M):
+        parts = re.split(r"(?=^Estate of )", text, flags=re.I | re.M)
+        return [p.strip() for p in parts if p.strip()]
+    if re.search(r"PR\s*20\d{2}", text, re.I):
+        parts = re.split(r"(?=\bPR\s*20\d{2}\s*[-–—]\s*\d+\b)", text, flags=re.I)
+        chunks = [p.strip() for p in parts if p.strip()]
+        if len(chunks) > 1:
+            return chunks
+    triple = re.split(r"\n\s*\n\s*\n+", text)
+    if len(triple) > 1:
+        return [p.strip() for p in triple if p.strip()]
+    double = re.split(r"\n\s*\n", text)
+    if len(double) > 1:
+        return [p.strip() for p in double if p.strip()]
+    return [text]
+
+
+def _parse_delimited_bulk_row(parts: list) -> dict:
+    parts = [p.strip() for p in parts if p and str(p).strip()]
+    if len(parts) < 2:
+        return {}
+    decedent = parts[0].strip()
+    if decedent.lower().startswith("estate of"):
+        decedent = decedent[9:].strip()
+    if not decedent:
+        return {}
+
+    addr_idx = next((i for i, p in enumerate(parts) if _is_plausible_address(p)), None)
+    if addr_idx is None:
+        return {}
+
+    address = parts[addr_idx]
+    case_no = filing = poc = ""
+    notes_parts = []
+    for i, part in enumerate(parts):
+        if i in (0, addr_idx):
+            continue
+        if _looks_like_case_number(part) and not case_no:
+            case_no = part
+        elif _looks_like_filing_date(part) and not filing:
+            filing = part
+        elif not poc:
+            poc = part
+        else:
+            notes_parts.append(part)
+
+    notes = "\n\n".join(notes_parts)
+    phone, email = _extract_phone_email_from_text(f"{poc}\n{notes}")
+    contact_name, contact_role = _split_poc_field(poc)
+    heirs = f"{contact_name} ({contact_role})" if contact_role else contact_name
+    return {
+        "decedent": decedent,
+        "address": address,
+        "county": "Middle TN",
+        "heirs": heirs or poc,
+        "contact_name": contact_name or poc,
+        "contact_role": contact_role,
+        "phone": phone,
+        "email": email,
+        "case_number": case_no,
+        "filing_date": filing,
+        "raw": " | ".join(parts),
+    }
+
+
+def _parse_multiline_bulk_block(lines: list) -> dict:
+    lines = [l.strip() for l in lines if l.strip() and not l.startswith("#")]
+    if len(lines) < 2:
+        return {}
+    decedent = lines[0]
+    if decedent.lower().startswith("estate of"):
+        decedent = decedent[9:].strip()
+
+    case_no = filing = poc = address = ""
+    notes_lines = []
+    after_address = False
+    for line in lines[1:]:
+        if re.match(r"^NOTES:\s*", line, re.I):
+            after_address = True
+            tail = re.sub(r"^NOTES:\s*", "", line, flags=re.I).strip()
+            if tail:
+                notes_lines.append(tail)
+            continue
+        if after_address:
+            notes_lines.append(line)
+            continue
+        if _looks_like_case_number(line) and not case_no:
+            case_no = line
+        elif _looks_like_filing_date(line) and not filing:
+            filing = line
+        elif _is_plausible_address(line) and not address:
+            address = line
+            after_address = True
+        elif not poc and not _is_plausible_address(line):
+            poc = line
+        else:
+            notes_lines.append(line)
+
+    if not decedent or not address:
+        return {}
+
+    notes = "\n\n".join(notes_lines)
+    phone, email = _extract_phone_email_from_text(f"{poc}\n{notes}\n" + "\n".join(lines))
+    contact_name, contact_role = _split_poc_field(poc)
+    heirs = f"{contact_name} ({contact_role})" if contact_role else (contact_name or poc)
+    county_m = re.search(
+        r"(Wilson|Davidson|Rutherford|Williamson|Sumner|Robertson|Cheatham|Dickson|Montgomery|Maury)\s+County",
+        "\n".join(lines),
+        re.I,
+    )
+    return {
+        "decedent": decedent,
+        "address": address,
+        "county": county_m.group(0) if county_m else "Middle TN",
+        "heirs": heirs,
+        "contact_name": contact_name or poc,
+        "contact_role": contact_role,
+        "phone": phone,
+        "email": email,
+        "case_number": case_no,
+        "filing_date": filing,
+        "raw": "\n".join(lines),
+    }
+
+
+def parse_lead_enhanced(raw: str) -> dict:
+    """Flexible parse — court PDF text, pipe/tab rows, or classic blocks."""
+    text = (raw or "").strip()
+    if not text:
+        return parse_lead("")
+
+    rows = []
+    seen = set()
+
+    def _add(parsed: dict) -> None:
+        if not parsed or not parsed.get("decedent") or not parsed.get("address"):
+            return
+        key = (parsed["decedent"].lower(), parsed["address"].lower())
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(parsed)
+
+    for block in _split_estate_chunks(text):
+        lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        has_delimited = any("|" in ln or "\t" in ln for ln in lines)
+        if not has_delimited and len(lines) >= 2:
+            _add(_parse_multiline_bulk_block(lines))
+            continue
+        for line in lines:
+            parts = _bulk_line_parts(line)
+            if len(parts) >= 2:
+                _add(_parse_delimited_bulk_row(parts))
+
+    if len(rows) == 1:
+        parsed = rows[0]
+    elif len(rows) > 1:
+        parsed = rows[0]
+    else:
+        parsed = dict(parse_lead(text))
+
+    if not parsed.get("case_number"):
+        cm = CRUSHER_CASE_RE.search(text)
+        if cm:
+            parsed["case_number"] = re.sub(r"\s+", "", cm.group(1).upper())
+
+    if not parsed.get("phone") or not parsed.get("email"):
+        bp, be = _extract_phone_email_from_text(text)
+        parsed["phone"] = parsed.get("phone") or bp
+        parsed["email"] = parsed.get("email") or be
+
+    if not parsed.get("contact_name"):
+        m = CRUSHER_PR_LINE_RE.search(text)
+        if m:
+            parsed["contact_name"] = m.group(1).strip()
+            parsed["contact_role"] = "Personal Representative"
+            if not parsed.get("heirs"):
+                parsed["heirs"] = f"{parsed['contact_name']} (Personal Representative)"
+
+    parsed["pr_address"] = _guess_pr_address(text, parsed.get("address", ""))
+    parsed["raw"] = text
+    return parsed
+
+
+def split_batch_text(text: str) -> list:
+    """Split a large paste into individual lead blocks."""
+    text = (text or "").strip()
+    if not text:
+        return []
+
+    chunks = _split_estate_chunks(text)
+    blocks = []
+    for chunk in chunks:
+        lines = [ln.strip() for ln in chunk.splitlines() if ln.strip()]
+        if not lines:
+            continue
+        if any("|" in ln or "\t" in ln for ln in lines):
+            for line in lines:
+                parts = _bulk_line_parts(line)
+                if len(parts) >= 2:
+                    row = _parse_delimited_bulk_row(parts)
+                    if row:
+                        row["raw"] = line
+                        blocks.append(row.get("raw", line))
+            continue
+        blocks.append(chunk)
+    return blocks if blocks else [text]
+
+
+def score_vacant_lead(parsed: dict) -> dict:
+    property_addr = parsed.get("address", "")
+    pr_addr = parsed.get("pr_address") or _guess_pr_address(parsed.get("raw", ""), property_addr)
+    parsed["pr_address"] = pr_addr
+    pr_name = parsed.get("contact_name") or parsed.get("heirs") or "—"
+
+    distance = _address_distance_miles(property_addr, pr_addr) if pr_addr else None
+    base_score, qual_status, flags = score_lead(parsed)
+
+    vacant = bool(distance is not None and distance > VACANT_DISTANCE_MILES)
+    if vacant:
+        base_score = max(base_score, 92)
+        flags.append("🔥 Likely Vacant • High Motivation")
+
+    if vacant:
+        action = "🔥 CALL FIRST"
+    elif base_score >= 65:
+        action = "✅ Queue"
+    elif base_score >= 40:
+        action = "Review"
+    else:
+        action = "Skip"
+
+    sort_score = base_score + (100 if vacant else 0)
+    dist_display = f"{distance:.0f} mi" if distance is not None else "—"
+
+    return {
+        "parsed": parsed,
+        "name": parsed.get("decedent", "Unknown"),
+        "property": property_addr,
+        "pr": pr_name,
+        "pr_address": pr_addr or "—",
+        "distance": dist_display,
+        "distance_miles": distance,
+        "score": base_score,
+        "sort_score": sort_score,
+        "qual_status": qual_status,
+        "vacant_likely": vacant,
+        "action": action,
+        "flags": flags,
+    }
+
+
+def crusher_score_batch(text: str) -> list:
+    blocks = split_batch_text(text)
+    scored = []
+    for block in blocks:
+        parsed = parse_lead_enhanced(block)
+        if parsed.get("address") == "Address TBD" and parsed.get("decedent") == "Unknown Decedent":
+            continue
+        scored.append(score_vacant_lead(parsed))
+    scored.sort(key=lambda x: (-x["sort_score"], -(x.get("distance_miles") or 0)))
+    return scored
+
+
+def crusher_push_to_call_queue(scored_rows: list) -> int:
+    """Insert qualified / vacant leads at top of CRM — hottest first for Branton."""
+    eligible = [
+        row for row in scored_rows
+        if row.get("vacant_likely") or row.get("qual_status") == "Qualified" or row.get("score", 0) >= 65
+    ]
+    if not eligible:
+        return 0
+
+    eligible.sort(key=lambda x: (-x["sort_score"], -(x.get("distance_miles") or 0)))
+    added = 0
+    for row in reversed(eligible):
+        parsed = dict(row["parsed"])
+        parsed["distance_miles"] = row.get("distance_miles")
+        parsed["vacant_likely"] = row.get("vacant_likely", False)
+        heat_status, heat_pipeline = heat_from_import_block(parsed.get("raw", ""))
+        if row.get("vacant_likely"):
+            heat_pipeline = "🔥 Hot / New (call today)"
+            heat_status = "New/Hot"
+        score = row.get("score", 0)
+        flags_txt = " · ".join(row.get("flags") or [])
+        notes = initial_notes_from_block(
+            f"{parsed.get('raw', '')}\n\n{flags_txt}".strip(),
+            source="90-Day Crusher",
+        )
+        st.session_state.leads.insert(
+            0,
+            build_lead(
+                parsed,
+                pipeline_stage=heat_pipeline,
+                status=heat_status,
+                score=score,
+                source="bulk",
+                assigned_to_branton=True,
+                follow_up_days=0,
+                notes=notes,
+            ),
+        )
+        added += 1
+    persist_leads()
+    return added
+
+
 _lead_id_seq = 0
 
 
@@ -1443,6 +1970,12 @@ def build_lead(parsed: dict, **extra) -> dict:
         "follow_up": follow_up_date(days),
         "raw": parsed.get("raw", ""),
     }
+    for opt in (
+        "case_number", "contact_name", "contact_role", "pr_address",
+        "distance_miles", "vacant_likely", "filing_date",
+    ):
+        if parsed.get(opt) not in (None, "", False):
+            lead[opt] = parsed[opt]
     return normalize_lead(lead)
 
 
@@ -2211,8 +2744,9 @@ st.markdown(
 )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab_dashboard, tab_add_leads, tab_outreach, tab_partner, tab_vendors, tab_training = st.tabs([
+tab_dashboard, tab_crusher, tab_add_leads, tab_outreach, tab_partner, tab_vendors, tab_training = st.tabs([
     "Dashboard",
+    "💰 90-Day Probate Crusher",
     "Add New Leads",
     "Generate Outreach",
     "📘 Partner Kit",
@@ -2761,6 +3295,135 @@ with tab_dashboard:
                         st.markdown("**Activity**")
                         for act in lead["activity"][:5]:
                             st.caption(f"{act.get('ts', '')[:16]} · {act.get('type', '')} · {act.get('detail', '')}")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — 💰 90-Day Probate Crusher
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_crusher:
+    st.markdown('<p class="crusher-title">💰 90-Day Probate Crusher</p>', unsafe_allow_html=True)
+    st.caption(
+        "Paste court exports, pipe-delimited rows, or raw PDF text — score vacant-motivation leads "
+        f"and push the hottest straight to {PARTNER_NAME}'s call list."
+    )
+
+    crusher_flash = st.session_state.pop("crusher_flash", None)
+    if crusher_flash:
+        st.success(crusher_flash)
+
+    st.markdown("### 🔥 AI Vacant House Scorer")
+    st.markdown('<div class="crusher-glow-marker"></div>', unsafe_allow_html=True)
+    crusher_batch = st.text_area(
+        "Paste batch of leads here (raw court text or pipe-delimited OK)",
+        height=240,
+        placeholder=(
+            "Paste anything — tncrtinfo export, CaseLink dump, pipe rows, or PDF copy…\n\n"
+            "Estate of Mary Johnson | 4521 Main St, Lebanon, TN 37087 | John Johnson, PR | PR2024-1234\n\n"
+            "Estate of Robert Smith\n"
+            "PR2024-5678\n"
+            "4521 Saundersville Rd, Mount Juliet, TN 37122\n"
+            "Jane Smith, Personal Representative\n"
+            "1420 Ocean Blvd, Jacksonville, FL 32250"
+        ),
+        key="crusher_batch_text",
+        label_visibility="visible",
+    )
+
+    score_col, ready_col = st.columns(2)
+    with score_col:
+        score_btn = st.button(
+            "🚀 Score & Prioritize for Branton",
+            use_container_width=True,
+            type="primary",
+            key="crusher_score_btn",
+        )
+    with ready_col:
+        ready_btn = st.button(
+            "✅ Ready for Branton",
+            use_container_width=True,
+            type="primary",
+            key="crusher_ready_btn",
+        )
+
+    if score_btn:
+        if not crusher_batch.strip():
+            st.warning("Paste a batch of leads first.")
+        else:
+            st.session_state.crusher_scored = crusher_score_batch(crusher_batch)
+            vacant_n = sum(1 for r in st.session_state.crusher_scored if r.get("vacant_likely"))
+            st.session_state.crusher_flash = (
+                f"Scored **{len(st.session_state.crusher_scored)}** leads — "
+                f"**{vacant_n}** flagged 🔥 Likely Vacant (PR > {VACANT_DISTANCE_MILES} mi from property)."
+            )
+            st.rerun()
+
+    if ready_btn:
+        rows = st.session_state.get("crusher_scored") or []
+        if not rows and crusher_batch.strip():
+            rows = crusher_score_batch(crusher_batch)
+            st.session_state.crusher_scored = rows
+        if not rows:
+            st.warning("Score a batch first — tap **🚀 Score & Prioritize for Branton**.")
+        else:
+            added = crusher_push_to_call_queue(rows)
+            if added:
+                st.session_state.crusher_flash = (
+                    f"✅ **{added}** leads pushed to the top of Branton's call queue "
+                    f"(🔥 vacant + qualified first). Open **Dashboard → 📅 Do Today** to start calling."
+                )
+            else:
+                st.session_state.crusher_flash = (
+                    "No qualified leads found — need decedent + property address at minimum."
+                )
+            st.rerun()
+
+    scored_rows = st.session_state.get("crusher_scored") or []
+    if scored_rows:
+        table_rows = []
+        for row in scored_rows:
+            name_cell = row["name"]
+            if row.get("vacant_likely"):
+                name_cell += " 🔥"
+            table_rows.append({
+                "Name": name_cell,
+                "Property": (row.get("property") or "—")[:60],
+                "PR": (row.get("pr") or "—")[:40],
+                "Distance": row.get("distance", "—"),
+                "Score": row.get("score", 0),
+                "Action": row.get("action", "—"),
+            })
+        st.markdown("**Priority queue** — tap column headers to sort")
+        st.dataframe(
+            table_rows,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Score": st.column_config.NumberColumn("Score", format="%d"),
+            },
+        )
+        vacant_top = [r for r in scored_rows if r.get("vacant_likely")]
+        if vacant_top:
+            st.markdown(
+                f'<span class="crusher-vacant-pill">🔥 {len(vacant_top)} Likely Vacant • High Motivation</span>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("---")
+    st.markdown("### 📋 Bulk Qualifier Upgrade")
+    st.caption(
+        "Same paste box above accepts **court PDF text**, **pipe/tab rows**, or **one lead per blank line**. "
+        "We auto-extract decedent, property, PR name, phone, email, and case #."
+    )
+    if scored_rows:
+        preview = scored_rows[:8]
+        for row in preview:
+            p = row["parsed"]
+            st.markdown(
+                f"**{p.get('decedent', '—')}** · {p.get('address', '—')[:50]}  \n"
+                f"PR: {row.get('pr', '—')} · Case: {p.get('case_number') or '—'} · "
+                f"📞 {p.get('phone') or '—'} · ✉️ {p.get('email') or '—'}"
+            )
+    else:
+        st.info("Paste a batch above and tap **🚀 Score & Prioritize** to preview extracted fields.")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 4 — Partner Kit
