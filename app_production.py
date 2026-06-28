@@ -270,6 +270,20 @@ st.markdown(
         font-size: 0.82rem;
         margin-left: 0.35rem;
     }
+    .crusher-mega-btn-marker { display: none; }
+    .crusher-mega-btn-marker + div [data-testid="stButton"] > button {
+        min-height: 4.25rem !important;
+        font-size: 1.12rem !important;
+        font-weight: 800 !important;
+        box-shadow: 0 6px 24px rgba(46, 160, 67, 0.5) !important;
+    }
+    .crusher-smart-glow-marker { display: none; }
+    .crusher-smart-glow-marker + div [data-testid="stTextArea"] textarea {
+        min-height: 16rem !important;
+        font-size: 1.02rem !important;
+        border: 2px solid #58a6ff !important;
+        box-shadow: 0 0 24px rgba(88, 166, 255, 0.38), inset 0 0 14px rgba(88, 166, 255, 0.06) !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1446,6 +1460,52 @@ CRUSHER_CASE_BULK_RE = re.compile(
     re.I,
 )
 
+TN_ZIP_AREA_CODES = {
+    "370": ["615"],
+    "371": ["615", "931"],
+    "372": ["615", "629"],
+    "373": ["423", "931"],
+    "374": ["423"],
+    "376": ["423"],
+    "377": ["865", "423"],
+    "378": ["865"],
+    "379": ["865"],
+    "380": ["901", "731"],
+    "381": ["901"],
+    "382": ["731"],
+    "383": ["731"],
+    "384": ["931", "615"],
+    "385": ["931"],
+}
+
+STATE_AREA_CODES = {
+    "AL": ["205", "251", "256"],
+    "AR": ["501", "479"],
+    "AZ": ["480", "602", "623"],
+    "CA": ["213", "310", "415", "619"],
+    "CO": ["303", "719", "720"],
+    "FL": ["305", "407", "813", "904"],
+    "GA": ["404", "470", "678", "912"],
+    "IL": ["312", "773", "847"],
+    "IN": ["317", "574", "812"],
+    "KS": ["316", "785", "913"],
+    "KY": ["502", "606", "859"],
+    "LA": ["225", "318", "504"],
+    "MI": ["313", "616", "734", "248"],
+    "MO": ["314", "417", "573", "816"],
+    "MS": ["601", "662", "228"],
+    "NC": ["336", "704", "919", "828"],
+    "NY": ["212", "315", "516", "718"],
+    "OH": ["216", "330", "419", "513"],
+    "OK": ["405", "539", "918"],
+    "PA": ["215", "412", "484", "717"],
+    "SC": ["803", "843", "864"],
+    "TX": ["214", "281", "512", "713", "817"],
+    "VA": ["276", "434", "540", "703", "804"],
+    "WA": ["206", "253", "360", "425"],
+    "WI": ["414", "608", "920"],
+}
+
 TN_ZIP_GEO = {
     "37013": (36.0606, -86.5736),
     "37027": (36.0012, -86.7936),
@@ -1530,16 +1590,114 @@ def _split_poc_field(poc_field: str) -> tuple:
     return poc, "Personal Representative"
 
 
+def _format_phone_digits(digits: str) -> str:
+    if len(digits) == 10:
+        return f"({digits[:3]}) {digits[3:6]}-{digits[6:]}"
+    if len(digits) == 11 and digits.startswith("1"):
+        return f"({digits[1:4]}) {digits[4:7]}-{digits[7:]}"
+    return digits
+
+
+def _extract_all_phones(text: str) -> list:
+    """Return [(formatted, digits, position), ...] deduped."""
+    seen: set = set()
+    found = []
+    for m in re.finditer(r"(?:\+?1[\s\-\.]?)?\(?\d{3}\)?[\s\-\.]?\d{3}[\s\-\.]?\d{4}", text or ""):
+        digits = re.sub(r"\D", "", m.group(0))
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        if len(digits) != 10 or digits in seen:
+            continue
+        seen.add(digits)
+        found.append((_format_phone_digits(digits), digits, m.start()))
+    return found
+
+
 def _extract_phone_email_from_text(text: str) -> tuple:
     blob = (text or "").strip()
-    phone = email = ""
-    pm = re.search(r"\(?\d{3}\)?[\s\-\.]?\d{3}[\s\-\.]?\d{4}", blob)
-    if pm:
-        phone = pm.group(0).strip()
+    phones = _extract_all_phones(blob)
+    phone = phones[0][0] if phones else ""
     em = re.search(r"[\w\.\-]+@[\w\.\-]+\.\w+", blob, re.I)
-    if em:
-        email = em.group(0).strip()
+    email = em.group(0).strip() if em else ""
     return phone, email
+
+
+def _extract_city_from_address(addr: str) -> str:
+    if not addr:
+        return ""
+    m = re.search(r",\s*([^,]+)\s*,\s*TN\b", addr, re.I)
+    if m:
+        return m.group(1).strip()
+    m2 = re.search(r",\s*([^,]+)\s*,\s*[A-Z]{2}\b", addr)
+    if m2:
+        return m2.group(1).strip()
+    return ""
+
+
+def _area_codes_for_address(addr: str) -> list:
+    if not addr:
+        return ["615", "629"]
+    oos = CRUSHER_OOS_RE.search(addr)
+    if oos and not re.search(r"\bTN\b", addr, re.I):
+        return STATE_AREA_CODES.get(oos.group(1).upper(), ["—"])
+    zips = CRUSHER_ZIP_RE.findall(addr)
+    if zips:
+        prefix = zips[-1][:3]
+        return TN_ZIP_AREA_CODES.get(prefix, ["615", "629"])
+    county_city = addr.lower()
+    if any(k in county_city for k in ("nashville", "davidson", "franklin", "brentwood", "murfreesboro")):
+        return ["615", "629"]
+    if any(k in county_city for k in ("clarksville", "columbia", "cookeville")):
+        return ["931"]
+    return ["615", "931"]
+
+
+def _clean_pr_token(name: str) -> str:
+    name = re.sub(
+        r"(?i)\b(estate of|administratrix|executrix|administrator|executor|"
+        r"personal representative|pr|contact tbd)\b",
+        "",
+        name or "",
+    )
+    return name.strip(" ,()")
+
+
+def enrich_lead_phones(parsed: dict) -> list:
+    """Smart phone finder — extract from paste or infer area-code guesses from PR location."""
+    raw = parsed.get("raw", "")
+    pr_name = _clean_pr_token(parsed.get("contact_name") or parsed.get("heirs") or "")
+    pr_tokens = [t for t in re.split(r"\s+", pr_name) if len(t) > 2]
+
+    phones = _extract_all_phones(raw)
+    if phones:
+        if pr_tokens:
+            anchor = raw.lower().find(pr_tokens[0].lower())
+            if anchor < 0:
+                anchor = 0
+            phones.sort(key=lambda item: abs(item[2] - anchor))
+        guesses = [p[0] for p in phones[:3]]
+        if not parsed.get("phone"):
+            parsed["phone"] = guesses[0]
+        parsed["phone_guesses"] = guesses
+        return guesses
+
+    pr_addr = parsed.get("pr_address") or parsed.get("address", "")
+    prop_addr = parsed.get("address", "")
+    city = _extract_city_from_address(pr_addr) or _extract_city_from_address(prop_addr)
+    county = (parsed.get("county") or "").replace(" County", "").strip()
+    location = city or county or "Middle TN"
+    codes = _area_codes_for_address(pr_addr or prop_addr)
+
+    guesses = []
+    for code in codes[:3]:
+        if code != "—":
+            guesses.append(f"{code}-???-???? · {location}")
+    if pr_name:
+        guesses.append(f"🔍 Search: {pr_name} {location} TN")
+    if not guesses:
+        guesses = ["615-???-???? · Middle TN"]
+    parsed["phone_guesses"] = guesses
+    return guesses
 
 
 def _extract_all_addresses(text: str) -> list:
@@ -1833,9 +1991,12 @@ def score_vacant_lead(parsed: dict) -> dict:
     pr_addr = parsed.get("pr_address") or _guess_pr_address(parsed.get("raw", ""), property_addr)
     parsed["pr_address"] = pr_addr
     pr_name = parsed.get("contact_name") or parsed.get("heirs") or "—"
+    phone_guesses = enrich_lead_phones(parsed)
 
     distance = _address_distance_miles(property_addr, pr_addr) if pr_addr else None
     base_score, qual_status, flags = score_lead(parsed)
+    if phone_guesses and parsed.get("phone"):
+        flags.append("✓ Phone enriched")
 
     vacant = bool(distance is not None and distance > VACANT_DISTANCE_MILES)
     if vacant:
@@ -1854,18 +2015,24 @@ def score_vacant_lead(parsed: dict) -> dict:
     sort_score = base_score + (100 if vacant else 0)
     dist_display = f"{distance:.0f} mi" if distance is not None else "—"
 
+    vacant_label = "🔥 Likely Vacant • High Motivation" if vacant else "—"
+    phone_display = " · ".join(phone_guesses[:3]) if phone_guesses else "—"
+
     return {
         "parsed": parsed,
         "name": parsed.get("decedent", "Unknown"),
         "property": property_addr,
         "pr": pr_name,
         "pr_address": pr_addr or "—",
+        "phone_guesses": phone_guesses,
+        "phone_display": phone_display,
         "distance": dist_display,
         "distance_miles": distance,
         "score": base_score,
         "sort_score": sort_score,
         "qual_status": qual_status,
         "vacant_likely": vacant,
+        "vacant_label": vacant_label,
         "action": action,
         "flags": flags,
     }
@@ -1904,8 +2071,9 @@ def crusher_push_to_call_queue(scored_rows: list) -> int:
             heat_status = "New/Hot"
         score = row.get("score", 0)
         flags_txt = " · ".join(row.get("flags") or [])
+        phone_txt = row.get("phone_display") or "—"
         notes = initial_notes_from_block(
-            f"{parsed.get('raw', '')}\n\n{flags_txt}".strip(),
+            f"{parsed.get('raw', '')}\n\nPhone guesses: {phone_txt}\n{flags_txt}".strip(),
             source="90-Day Crusher",
         )
         st.session_state.leads.insert(
@@ -3310,6 +3478,106 @@ with tab_crusher:
     if crusher_flash:
         st.success(crusher_flash)
 
+    st.markdown("### 📱 Smart Phone Finder + Vacant Scorer")
+    st.caption("No BeenVerified — paste raw court data, we enrich phones + flag vacant motivation instantly.")
+    st.markdown('<div class="crusher-smart-glow-marker"></div>', unsafe_allow_html=True)
+    crusher_smart_batch = st.text_area(
+        "Paste any batch of leads here (raw court text, pipe-delimited, or names/addresses OK)",
+        height=260,
+        placeholder=(
+            "Paste anything — names, addresses, PR lines, phones mixed in…\n\n"
+            "Estate of Linda Davis | 890 Heritage Dr, Murfreesboro, TN 37129 | "
+            "Tom Davis, PR | (615) 555-8822\n\n"
+            "Estate of Robert Smith\n"
+            "4521 Saundersville Rd, Mount Juliet, TN 37122\n"
+            "Jane Smith, Personal Representative\n"
+            "1420 Ocean Blvd, Jacksonville, FL 32250"
+        ),
+        key="crusher_smart_batch_text",
+        label_visibility="visible",
+    )
+
+    st.markdown('<div class="crusher-mega-btn-marker"></div>', unsafe_allow_html=True)
+    smart_enrich_btn = st.button(
+        "🔍 Enrich Phones + Score Vacant + Push to Branton",
+        use_container_width=True,
+        type="primary",
+        key="crusher_smart_enrich_btn",
+    )
+
+    if smart_enrich_btn:
+        if not crusher_smart_batch.strip():
+            st.warning("Paste a batch of leads first.")
+        else:
+            smart_rows = crusher_score_batch(crusher_smart_batch)
+            st.session_state.crusher_smart_scored = smart_rows
+            st.session_state.crusher_scored = smart_rows
+            vacant_n = sum(1 for r in smart_rows if r.get("vacant_likely"))
+            phone_n = sum(1 for r in smart_rows if r["parsed"].get("phone"))
+            st.session_state.crusher_flash = (
+                f"📱 Enriched **{len(smart_rows)}** leads — **{phone_n}** with extracted phones, "
+                f"**{vacant_n}** 🔥 Likely Vacant (PR > {VACANT_DISTANCE_MILES} mi)."
+            )
+            st.rerun()
+
+    smart_scored = st.session_state.get("crusher_smart_scored") or []
+    if smart_scored:
+        smart_table = []
+        for row in smart_scored:
+            smart_table.append({
+                "Decedent": row.get("name", "—"),
+                "Property": (row.get("property") or "—")[:55],
+                "PR Name": (row.get("pr") or "—")[:35],
+                "Best Phone Guess(es)": (row.get("phone_display") or "—")[:80],
+                "Distance": row.get("distance", "—"),
+                "Score": row.get("score", 0),
+                "🔥 Likely Vacant": row.get("vacant_label", "—"),
+            })
+        st.markdown("**Smart enrichment queue** — tap column headers to sort")
+        st.dataframe(
+            smart_table,
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "Score": st.column_config.NumberColumn("Score", format="%d"),
+            },
+        )
+        vacant_smart = [r for r in smart_scored if r.get("vacant_likely")]
+        if vacant_smart:
+            st.markdown(
+                f'<span class="crusher-vacant-pill">🔥 {len(vacant_smart)} Likely Vacant • High Motivation</span>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown('<div class="crusher-mega-btn-marker"></div>', unsafe_allow_html=True)
+    push_hottest_btn = st.button(
+        "✅ Push All Hottest to Branton Queue",
+        use_container_width=True,
+        type="primary",
+        key="crusher_push_hottest_btn",
+    )
+    if push_hottest_btn:
+        rows = st.session_state.get("crusher_smart_scored") or st.session_state.get("crusher_scored") or []
+        if not rows and crusher_smart_batch.strip():
+            rows = crusher_score_batch(crusher_smart_batch)
+            st.session_state.crusher_smart_scored = rows
+            st.session_state.crusher_scored = rows
+        if not rows:
+            st.warning("Enrich & score a batch first — tap **🔍 Enrich Phones + Score Vacant + Push to Branton**.")
+        else:
+            added = crusher_push_to_call_queue(rows)
+            if added:
+                st.session_state.crusher_flash = (
+                    f"✅ **{added}** hottest leads pushed to Branton's queue (sorted 🔥 vacant first). "
+                    "Open **Dashboard → 📅 Do Today** to call."
+                )
+            else:
+                st.session_state.crusher_flash = (
+                    "No qualified leads to push — need decedent + property address at minimum."
+                )
+            st.rerun()
+
+    st.markdown("---")
     st.markdown("### 🔥 AI Vacant House Scorer")
     st.markdown('<div class="crusher-glow-marker"></div>', unsafe_allow_html=True)
     crusher_batch = st.text_area(
