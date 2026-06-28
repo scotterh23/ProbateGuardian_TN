@@ -1,0 +1,3 @@
+[build]
+  base = "probate-landing"
+  publish = "probate-landing"
