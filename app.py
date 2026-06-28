@@ -284,6 +284,51 @@ st.markdown(
         border: 2px solid #58a6ff !important;
         box-shadow: 0 0 24px rgba(88, 166, 255, 0.38), inset 0 0 14px rgba(88, 166, 255, 0.06) !important;
     }
+    .crusher-hero-callout {
+        font-size: clamp(1rem, 3.8vw, 1.18rem);
+        font-weight: 800;
+        line-height: 1.55;
+        color: #ffe08a;
+        background: linear-gradient(135deg, #2d1f0f 0%, #1a1208 100%);
+        border: 2px solid #f0b429;
+        border-radius: 12px;
+        padding: 1rem 1.15rem;
+        margin: 0.65rem 0 1.1rem 0;
+        box-shadow: 0 4px 18px rgba(240, 180, 41, 0.22);
+    }
+    .crusher-phone-hint {
+        font-size: clamp(0.95rem, 3.4vw, 1.05rem);
+        font-weight: 700;
+        line-height: 1.5;
+        color: #79c0ff;
+        background: linear-gradient(135deg, #0d2137 0%, #0a1628 100%);
+        border: 1px solid #388bfd;
+        border-radius: 10px;
+        padding: 0.75rem 1rem;
+        margin: 0.35rem 0 0.85rem 0;
+    }
+    .crusher-kpi-card {
+        background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+        border: 2px solid #3fb950;
+        border-radius: 14px;
+        padding: 1rem 1.1rem 0.85rem 1.1rem;
+        margin: 1rem 0 1.25rem 0;
+        box-shadow: 0 6px 22px rgba(63, 185, 80, 0.2);
+    }
+    .crusher-kpi-title {
+        font-size: 1.28rem;
+        font-weight: 800;
+        color: #aff5b4 !important;
+        margin: 0 0 0.35rem 0;
+    }
+    .crusher-kpi-points {
+        font-size: clamp(2rem, 8vw, 2.75rem);
+        font-weight: 900;
+        color: #f0b429;
+        text-align: center;
+        margin: 0.25rem 0 0.5rem 0;
+        line-height: 1.1;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -1439,6 +1484,14 @@ def score_lead(parsed: dict) -> tuple:
 
 # ── 90-Day Probate Crusher — vacant scoring & flexible bulk parse ─────────────
 VACANT_DISTANCE_MILES = 50
+CRUSHER_KPI_FILE = Path(__file__).resolve().parent / "crusher_kpi.json"
+CRUSHER_KPI_POINTS = {
+    "pipeline_add": 10,
+    "attorney_call": 25,
+    "content": 20,
+    "vacant_flag": 15,
+}
+CRUSHER_WEEKLY_POINT_GOAL = 200
 CRUSHER_CASE_RE = re.compile(r"\b(PR\s*20\d{2}\s*[-–—]\s*\d+)\b", re.I)
 CRUSHER_STREET_RE = re.compile(
     r"(\d+\s+[\w\s\.\#'-]+(?:Rd|Road|St|Street|Ave|Avenue|Dr|Drive|Ln|Lane|"
@@ -2048,6 +2101,120 @@ def crusher_score_batch(text: str) -> list:
         scored.append(score_vacant_lead(parsed))
     scored.sort(key=lambda x: (-x["sort_score"], -(x.get("distance_miles") or 0)))
     return scored
+
+
+def _crusher_week_start_iso() -> str:
+    now = datetime.now()
+    week_start = now - timedelta(days=now.weekday())
+    return week_start.strftime("%Y-%m-%d")
+
+
+def _crusher_week_label() -> str:
+    start = datetime.strptime(_crusher_week_start_iso(), "%Y-%m-%d")
+    end = start + timedelta(days=6)
+    return f"{start.strftime('%b %d')} – {end.strftime('%b %d, %Y')}"
+
+
+def load_crusher_kpi() -> dict:
+    default = {
+        "week_iso": _crusher_week_start_iso(),
+        "attorney_calls": 0,
+        "content": 0,
+        "vacant_flagged": 0,
+    }
+    if not CRUSHER_KPI_FILE.exists():
+        return default
+    try:
+        data = json.loads(CRUSHER_KPI_FILE.read_text(encoding="utf-8"))
+        if data.get("week_iso") != _crusher_week_start_iso():
+            return default
+        return {**default, **data}
+    except (json.JSONDecodeError, OSError):
+        return default
+
+
+def save_crusher_kpi(data: dict) -> None:
+    data["week_iso"] = _crusher_week_start_iso()
+    tmp = CRUSHER_KPI_FILE.with_suffix(".tmp")
+    try:
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(CRUSHER_KPI_FILE)
+    except OSError:
+        pass
+
+
+def _count_pipeline_adds_this_week(leads: list) -> int:
+    week_start = _crusher_week_start_iso()
+    count = 0
+    for lead in leads:
+        created = (lead.get("created") or "")[:10]
+        if created >= week_start:
+            count += 1
+    return count
+
+
+def _count_attorney_touchpoints_this_week(leads: list) -> int:
+    week_start = _crusher_week_start_iso()
+    count = 0
+    for lead in leads:
+        for note in lead.get("notes") or []:
+            if not isinstance(note, dict):
+                continue
+            ts = (note.get("ts") or "")[:10]
+            text = note.get("text") or ""
+            if ts >= week_start and re.search(
+                r"\battorney\b|\besq\.?\b|law\s+firm|legal\s+counsel",
+                text,
+                re.I,
+            ):
+                count += 1
+        for act in lead.get("activity") or []:
+            ts = (act.get("ts") or "")[:10]
+            detail = act.get("detail") or ""
+            if ts >= week_start and re.search(r"attorney|esq", detail, re.I):
+                count += 1
+    return count
+
+
+def record_crusher_vacant_flags(vacant_count: int) -> None:
+    if vacant_count <= 0:
+        return
+    kpi = load_crusher_kpi()
+    kpi["vacant_flagged"] = int(kpi.get("vacant_flagged", 0)) + vacant_count
+    save_crusher_kpi(kpi)
+
+
+def compute_crusher_kpi_scorecard(leads: list) -> dict:
+    kpi = load_crusher_kpi()
+    pipeline_adds = _count_pipeline_adds_this_week(leads)
+    manual_attorney = int(kpi.get("attorney_calls", 0))
+    auto_attorney = _count_attorney_touchpoints_this_week(leads)
+    attorney_calls = max(manual_attorney, auto_attorney)
+    content = int(kpi.get("content", 0))
+    vacant_flagged = int(kpi.get("vacant_flagged", 0))
+
+    weekly_points = (
+        pipeline_adds * CRUSHER_KPI_POINTS["pipeline_add"]
+        + attorney_calls * CRUSHER_KPI_POINTS["attorney_call"]
+        + content * CRUSHER_KPI_POINTS["content"]
+        + vacant_flagged * CRUSHER_KPI_POINTS["vacant_flag"]
+    )
+
+    return {
+        "week_label": _crusher_week_label(),
+        "weekly_points": weekly_points,
+        "weekly_goal": CRUSHER_WEEKLY_POINT_GOAL,
+        "attorney_calls": attorney_calls,
+        "content": content,
+        "pipeline_adds": pipeline_adds,
+        "vacant_flagged": vacant_flagged,
+        "point_breakdown": {
+            "pipeline": pipeline_adds * CRUSHER_KPI_POINTS["pipeline_add"],
+            "attorney": attorney_calls * CRUSHER_KPI_POINTS["attorney_call"],
+            "content": content * CRUSHER_KPI_POINTS["content"],
+            "vacant": vacant_flagged * CRUSHER_KPI_POINTS["vacant_flag"],
+        },
+    }
 
 
 def crusher_push_to_call_queue(scored_rows: list) -> int:
@@ -3469,6 +3636,13 @@ with tab_dashboard:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_crusher:
     st.markdown('<p class="crusher-title">💰 90-Day Probate Crusher</p>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="crusher-hero-callout">'
+        "🔥 <strong>Vacant Scorer:</strong> Compares <strong>PR address</strong> vs <strong>Property address</strong> "
+        "(like Probate Mastery video). <strong>&gt;50 miles = Likely Vacant • High Motivation</strong>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.caption(
         "Paste court exports, pipe-delimited rows, or raw PDF text — score vacant-motivation leads "
         f"and push the hottest straight to {PARTNER_NAME}'s call list."
@@ -3479,7 +3653,13 @@ with tab_crusher:
         st.success(crusher_flash)
 
     st.markdown("### 📱 Smart Phone Finder + Vacant Scorer")
-    st.caption("No BeenVerified — paste raw court data, we enrich phones + flag vacant motivation instantly.")
+    st.markdown(
+        '<div class="crusher-phone-hint">'
+        "📱 <strong>Phone guesses</strong> = ready-to-search strings for <strong>BeenVerified / Google</strong>. "
+        "Paste the <strong>🔥 leads only</strong> to save time."
+        "</div>",
+        unsafe_allow_html=True,
+    )
     st.markdown('<div class="crusher-smart-glow-marker"></div>', unsafe_allow_html=True)
     crusher_smart_batch = st.text_area(
         "Paste any batch of leads here (raw court text, pipe-delimited, or names/addresses OK)",
@@ -3514,6 +3694,7 @@ with tab_crusher:
             st.session_state.crusher_scored = smart_rows
             vacant_n = sum(1 for r in smart_rows if r.get("vacant_likely"))
             phone_n = sum(1 for r in smart_rows if r["parsed"].get("phone"))
+            record_crusher_vacant_flags(vacant_n)
             st.session_state.crusher_flash = (
                 f"📱 Enriched **{len(smart_rows)}** leads — **{phone_n}** with extracted phones, "
                 f"**{vacant_n}** 🔥 Likely Vacant (PR > {VACANT_DISTANCE_MILES} mi)."
@@ -3577,6 +3758,48 @@ with tab_crusher:
                 )
             st.rerun()
 
+    crusher_kpi = compute_crusher_kpi_scorecard(get_leads())
+    st.markdown('<div class="crusher-kpi-card">', unsafe_allow_html=True)
+    st.markdown('<p class="crusher-kpi-title">📊 90-Day Crusher KPI Scorecard — This Week</p>', unsafe_allow_html=True)
+    st.caption(f"Week of **{crusher_kpi['week_label']}** · Goal **{crusher_kpi['weekly_goal']}+** weekly points (Probate Mastery style)")
+    st.markdown(
+        f'<p class="crusher-kpi-points">{crusher_kpi["weekly_points"]} pts</p>',
+        unsafe_allow_html=True,
+    )
+    k1, k2, k3, k4 = st.columns(4)
+    k1.metric("Pipeline Adds", crusher_kpi["pipeline_adds"], help=f"+{CRUSHER_KPI_POINTS['pipeline_add']} pts each")
+    k2.metric("Attorney Calls", crusher_kpi["attorney_calls"], help=f"+{CRUSHER_KPI_POINTS['attorney_call']} pts each")
+    k3.metric("Content", crusher_kpi["content"], help=f"+{CRUSHER_KPI_POINTS['content']} pts each")
+    k4.metric("🔥 Vacant Flags", crusher_kpi["vacant_flagged"], help=f"+{CRUSHER_KPI_POINTS['vacant_flag']} pts each")
+    bd = crusher_kpi["point_breakdown"]
+    st.caption(
+        f"Points breakdown — Pipeline **{bd['pipeline']}** · Attorney **{bd['attorney']}** · "
+        f"Content **{bd['content']}** · Vacant **{bd['vacant']}**"
+    )
+    kpi_data = load_crusher_kpi()
+    ac1, ac2, cc1, cc2 = st.columns(4)
+    with ac1:
+        if st.button("➕ Attorney Call", key="crusher_kpi_attorney_plus", use_container_width=True):
+            kpi_data["attorney_calls"] = int(kpi_data.get("attorney_calls", 0)) + 1
+            save_crusher_kpi(kpi_data)
+            st.rerun()
+    with ac2:
+        if st.button("➕ Content Post", key="crusher_kpi_content_plus", use_container_width=True):
+            kpi_data["content"] = int(kpi_data.get("content", 0)) + 1
+            save_crusher_kpi(kpi_data)
+            st.rerun()
+    with cc1:
+        if st.button("↩️ Undo Attorney", key="crusher_kpi_attorney_minus", use_container_width=True):
+            kpi_data["attorney_calls"] = max(0, int(kpi_data.get("attorney_calls", 0)) - 1)
+            save_crusher_kpi(kpi_data)
+            st.rerun()
+    with cc2:
+        if st.button("↩️ Undo Content", key="crusher_kpi_content_minus", use_container_width=True):
+            kpi_data["content"] = max(0, int(kpi_data.get("content", 0)) - 1)
+            save_crusher_kpi(kpi_data)
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
     st.markdown("---")
     st.markdown("### 🔥 AI Vacant House Scorer")
     st.markdown('<div class="crusher-glow-marker"></div>', unsafe_allow_html=True)
@@ -3618,6 +3841,7 @@ with tab_crusher:
         else:
             st.session_state.crusher_scored = crusher_score_batch(crusher_batch)
             vacant_n = sum(1 for r in st.session_state.crusher_scored if r.get("vacant_likely"))
+            record_crusher_vacant_flags(vacant_n)
             st.session_state.crusher_flash = (
                 f"Scored **{len(st.session_state.crusher_scored)}** leads — "
                 f"**{vacant_n}** flagged 🔥 Likely Vacant (PR > {VACANT_DISTANCE_MILES} mi from property)."
