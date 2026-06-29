@@ -441,7 +441,7 @@ a:hover {
 .team-grid-compact {
   display: grid;
   gap: 1rem;
-  max-width: 52rem;
+  max-width: 56rem;
 }
 
 .team-card-compact {
@@ -451,15 +451,38 @@ a:hover {
   background: #fff;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  padding: 1rem 1.15rem;
+  padding: 1.15rem 1.25rem;
+  height: 100%;
+  box-shadow: 0 4px 14px rgba(15, 41, 34, 0.05);
 }
 
-.team-card-compact .bio-photo {
-  width: 52px;
-  height: 52px;
-  font-size: 0.95rem;
-  margin-bottom: 0;
+.team-avatar {
+  width: 64px;
+  height: 64px;
   flex-shrink: 0;
+  border-radius: 50%;
+}
+
+.team-avatar-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--green-700);
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.05rem;
+}
+
+.team-avatar-photo {
+  object-fit: cover;
+  object-position: center top;
+  border: 2px solid var(--green-100);
+  box-shadow: 0 2px 8px rgba(15, 41, 34, 0.12);
+}
+
+.team-card-body {
+  flex: 1;
+  min-width: 0;
 }
 
 .team-card-compact h3 {
@@ -474,11 +497,11 @@ a:hover {
   margin-bottom: 0.35rem;
 }
 
-.team-card-compact p {
+.team-card-compact .team-card-body > p:last-child {
   font-size: 0.9rem;
   color: var(--text-muted);
   margin: 0;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .final-cta-section {
@@ -1785,6 +1808,7 @@ a:hover {
 
   .team-grid-compact {
     grid-template-columns: repeat(2, 1fr);
+    align-items: stretch;
   }
 
   .core-card-grid {
