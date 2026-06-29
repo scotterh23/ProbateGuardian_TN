@@ -3,6 +3,9 @@
 from pathlib import Path
 
 from _services_data import SERVICES, SERVICE_COUNTIES
+from _service_meta import SERVICE_META
+
+SITE = "https://probateguardians.com"
 
 PHONE = "(615) 669-7075"
 PHONE_TEL = "6156697075"
@@ -116,39 +119,117 @@ def service_cta_block() -> str:
     </div>"""
 
 
+def enriched_services() -> list:
+    out = []
+    for svc in SERVICES:
+        meta = SERVICE_META[svc["id"]]
+        out.append({**svc, **meta})
+    return out
+
+
+def service_href(svc: dict) -> str:
+    return f"/services/{svc['slug']}/"
+
+
+def service_by_id() -> dict:
+    return {svc["id"]: svc for svc in enriched_services()}
+
+
+def linkify(text: str) -> str:
+    lookup = service_by_id()
+    for sid, svc in lookup.items():
+        text = text.replace(f'href="#{sid}"', f'href="{service_href(svc)}"')
+    return text
+
+
+def breadcrumbs(items: list, light: bool = False) -> str:
+    cls = "breadcrumbs breadcrumbs-light" if light else "breadcrumbs"
+    lis = []
+    for label, href, current in items:
+        if current:
+            lis.append(f'<li aria-current="page">{label}</li>')
+        else:
+            lis.append(f'<li><a href="{href}">{label}</a></li>')
+    return f"""
+    <nav class="{cls}" aria-label="Breadcrumb">
+      <ol>{"".join(lis)}</ol>
+    </nav>"""
+
+
 def internal_links() -> str:
     return f"""
-    <p class="internal-links">Also explore: <a href="/roadmap/">Guardian Kit &amp; Family Roadmap</a> · <a href="/services/">All Services</a> · <a href="/counties/">Counties We Serve</a> · <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>"""
+    <p class="internal-links">Also explore: <a href="/">Home</a> · <a href="/roadmap/">Guardian Kit &amp; Family Roadmap</a> · <a href="/services/">All Services</a> · <a href="/counties/">Counties We Serve</a> · <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>"""
 
 
-def render_related_links(related: list) -> str:
-    parts = [f'<a href="{href}">{label}</a>' for label, href in related]
+def render_related_links(svc: dict) -> str:
+    lookup = service_by_id()
+    parts = []
+    for label, ref in svc["related"]:
+        if ref.startswith("#"):
+            target = lookup.get(ref[1:])
+            if target:
+                parts.append(f'<a href="{service_href(target)}">{label}</a>')
+        else:
+            parts.append(f'<a href="{ref}">{label}</a>')
     parts.extend([
         '<a href="/roadmap/">Family Roadmap</a>',
         '<a href="/counties/">Counties We Serve</a>',
-        '<a href="/services/#counties-we-serve">Your County</a>',
+        '<a href="/">Home</a>',
     ])
-    return f'<p class="service-related">Related services: {" · ".join(parts)}</p>'
-
-
-def render_service_detail(svc: dict) -> str:
-    paragraphs = "".join(f"<p>{p}</p>" for p in svc["paragraphs"])
-    bullets = "".join(f"<li>{b}</li>" for b in svc["bullets"])
     return f"""
-    <article class="service-detail" id="{svc['id']}">
+    <div class="related-services-block">
+      <h3 class="related-services-title">Related services</h3>
+      <p class="service-related">{" · ".join(parts)}</p>
+    </div>"""
+
+
+def render_service_page_body(svc: dict) -> str:
+    paragraphs = "".join(f"<p>{linkify(p)}</p>" for p in svc["paragraphs"])
+    examples = "".join(
+        f'<aside class="local-example"><p>{linkify(ex)}</p></aside>' for ex in svc["local_examples"]
+    )
+    bullets = "".join(f"<li>{linkify(b)}</li>" for b in svc["bullets"])
+    crumbs = breadcrumbs([
+        ("Home", "/", False),
+        ("Services", "/services/", False),
+        (svc["name"], service_href(svc), True),
+    ])
+    return f"""
+    <section class="page-hero page-hero-service">
       <div class="container service-detail-inner">
-        <p class="eyebrow">{svc['icon']} Service</p>
-        <h2>{svc['name']}</h2>
+        {crumbs}
+        <p class="eyebrow">{svc['icon']} Probate Guardians TN Service</p>
+        <h1>{svc['name']}</h1>
         <p class="service-benefit-headline">{svc['benefit_headline']}</p>
+        <p class="page-hero-lead">{svc['lead']}</p>
+        <p class="phone-line"><a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
+      </div>
+    </section>
+    <section class="section section-warm">
+      <div class="container service-detail-inner">
         <div class="service-detail-body">
           {paragraphs}
         </div>
+        <h2 class="section-title section-title-sm">How we help families in Middle Tennessee</h2>
         <ul class="service-detail-bullets">{bullets}</ul>
-        {service_cta_block()}
-        {render_related_links(svc['related'])}
+        <h2 class="section-title section-title-sm">Local examples</h2>
+        <div class="local-examples-grid">{examples}</div>
+        {render_related_links(svc)}
+        <p class="back-to-services"><a href="/services/">← Back to All Services</a></p>
         {internal_links()}
       </div>
-    </article>"""
+    </section>
+    <section class="section section-green service-page-cta">
+      <div class="container narrow">
+        <h2 class="section-title section-title-light">You do not have to figure this out alone</h2>
+        <p class="section-lead section-lead-light">Whether you are in Wilson County, Sumner County, the Nashville area, Brentwood, Mt. Juliet, or anywhere in Middle Tennessee — one call connects you to compassion, clarity, and a free Guardian Kit. No pressure. Your timeline.</p>
+        <div class="detail-cta-row service-cta-row">
+          <a href="tel:{PHONE_TEL}" class="btn btn-primary btn-cta-phone">{PHONE_LINK}</a>
+          <a href="/roadmap/" class="btn btn-secondary btn-on-green">Get Your Free Guardian Kit</a>
+        </div>
+        <p class="back-to-services back-to-services-light"><a href="/services/">← Back to All Services</a></p>
+      </div>
+    </section>"""
 
 
 def render_service_counties_block() -> str:
@@ -211,22 +292,25 @@ COUNTIES = [
 
 def build_services() -> str:
     cards = []
-    details = []
-    for svc in SERVICES:
+    for svc in enriched_services():
         cards.append(f"""
-        <a class="core-card" href="#{svc['id']}">
+        <a class="core-card" href="{service_href(svc)}">
           <span class="core-card-icon" aria-hidden="true">{svc['icon']}</span>
           <h2>{svc['name']}</h2>
           <p>{svc['lead']}</p>
           <span class="core-card-arrow">Learn more →</span>
         </a>""")
-        details.append(render_service_detail(svc))
+    crumbs = breadcrumbs([
+        ("Home", "/", False),
+        ("Services", "/services/", True),
+    ])
     body = f"""
     <section class="page-hero">
       <div class="container">
+        {crumbs}
         <p class="eyebrow">Probate Guardians TN · Core Services</p>
         <h1>Services for Middle Tennessee Probate Families</h1>
-        <p class="page-hero-lead">One support system — the same compassionate tone as your <a href="/roadmap/">Guardian Kit</a>. Twelve services, six core counties, one number: <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a>.</p>
+        <p class="page-hero-lead">One support system — the same compassionate tone as your <a href="/roadmap/">Guardian Kit</a>. Twelve dedicated service pages, six core counties, one number: <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a>.</p>
         <p class="phone-line"><a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
         <div class="core-hub-links">
           <a href="/roadmap/" class="btn btn-secondary">Get your free Guardian Kit</a>
@@ -245,16 +329,26 @@ def build_services() -> str:
         </div>
       </div>
     </section>
-    <section class="section section-warm services-detail-section">{"".join(details)}
-    </section>
     {render_service_counties_block()}"""
     return shell(
         "Probate Services Middle Tennessee | Probate Guardians TN",
         "12 probate real estate services for Middle TN heirs — inherited home sales, muniment, cash offers, clean-out, repairs, senior moves, and full estate coordination in Davidson, Sumner, Wilson, Rutherford & Williamson. Call (615) 669-7075.",
-        "https://probateguardians.com/services/",
+        f"{SITE}/services/",
         "../", "../",
         {"svc": True},
         body,
+    )
+
+
+def build_service_page(svc: dict) -> str:
+    title = f"{svc['name']} | Probate Guardians TN"
+    return shell(
+        title,
+        svc["meta_description"],
+        f"{SITE}/services/{svc['slug']}/",
+        "../../", "../../",
+        {"svc": True},
+        render_service_page_body(svc),
     )
 
 
@@ -381,9 +475,17 @@ def main():
     (root / "counties").mkdir(exist_ok=True)
     (root / "about").mkdir(exist_ok=True)
     (root / "services" / "index.html").write_text(build_services(), encoding="utf-8")
+    built = ["services/index.html"]
+    for svc in enriched_services():
+        svc_dir = root / "services" / svc["slug"]
+        svc_dir.mkdir(exist_ok=True)
+        (svc_dir / "index.html").write_text(build_service_page(svc), encoding="utf-8")
+        built.append(f"services/{svc['slug']}/index.html")
     (root / "counties" / "index.html").write_text(build_counties(), encoding="utf-8")
     (root / "about" / "index.html").write_text(build_about(), encoding="utf-8")
-    print("Built services/, counties/, about/")
+    print(f"Built {len(built)} service pages + counties/, about/")
+    for path in built:
+        print(f"  · {path}")
 
 
 if __name__ == "__main__":

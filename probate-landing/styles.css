@@ -1279,6 +1279,125 @@ a:hover {
   max-width: 760px;
 }
 
+/* Breadcrumbs */
+.breadcrumbs {
+  margin-bottom: 1rem;
+}
+
+.breadcrumbs ol {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.35rem;
+  list-style: none;
+  font-size: 0.86rem;
+  color: var(--text-muted);
+}
+
+.breadcrumbs a {
+  color: var(--green-700);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.breadcrumbs a:hover {
+  text-decoration: underline;
+}
+
+.breadcrumbs li:not(:last-child)::after {
+  content: "›";
+  margin-left: 0.35rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.breadcrumbs-light,
+.breadcrumbs-light ol {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.breadcrumbs-light a {
+  color: var(--green-100);
+}
+
+.page-hero-service {
+  padding-bottom: 2rem;
+}
+
+.page-hero-service h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.65rem, 5vw, 2.35rem);
+  color: var(--green-900);
+  line-height: 1.2;
+  margin-bottom: 0.65rem;
+}
+
+.section-title-sm {
+  font-size: clamp(1.15rem, 3.5vw, 1.4rem);
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.local-examples-grid {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.local-example {
+  background: #fff;
+  border-left: 4px solid var(--green-500);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 1rem 1.15rem;
+  box-shadow: 0 4px 14px rgba(15, 41, 34, 0.05);
+}
+
+.local-example p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.related-services-block {
+  margin-top: 1.75rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--border);
+}
+
+.related-services-title {
+  font-family: var(--font-serif);
+  font-size: 1.1rem;
+  color: var(--green-800);
+  margin-bottom: 0.5rem;
+}
+
+.back-to-services {
+  margin-top: 1.25rem;
+  font-weight: 600;
+}
+
+.back-to-services a {
+  text-decoration: none;
+  color: var(--green-700);
+}
+
+.back-to-services a:hover {
+  text-decoration: underline;
+}
+
+.back-to-services-light a {
+  color: var(--green-100);
+}
+
+.service-page-cta {
+  text-align: center;
+}
+
+.service-page-cta .detail-cta-row {
+  justify-content: center;
+}
+
 .service-benefit-headline {
   font-family: var(--font-serif);
   font-size: clamp(1.15rem, 3.5vw, 1.45rem);
