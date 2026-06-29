@@ -1275,6 +1275,167 @@ a:hover {
   font-weight: 600;
 }
 
+.service-detail-inner {
+  max-width: 760px;
+}
+
+.service-benefit-headline {
+  font-family: var(--font-serif);
+  font-size: clamp(1.15rem, 3.5vw, 1.45rem);
+  font-weight: 600;
+  color: var(--green-700);
+  line-height: 1.35;
+  margin-bottom: 1.15rem;
+}
+
+.service-detail-body p {
+  margin-bottom: 1rem;
+  color: var(--text);
+  line-height: 1.7;
+}
+
+.service-detail-body a {
+  font-weight: 600;
+}
+
+.service-detail-bullets {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 1.15rem 1.25rem 1.15rem 2.25rem;
+  margin: 1.25rem 0 1.5rem;
+  box-shadow: 0 4px 14px rgba(15, 41, 34, 0.05);
+}
+
+.service-detail-bullets li {
+  margin-bottom: 0.5rem;
+  line-height: 1.55;
+}
+
+.service-related {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  line-height: 1.6;
+}
+
+.service-related a {
+  font-weight: 600;
+}
+
+.service-cta-row {
+  margin-top: 1.5rem;
+}
+
+.services-detail-section .service-detail {
+  padding: 2.5rem 0;
+}
+
+.services-detail-section .service-detail:nth-child(even) {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.btn-sm {
+  font-size: 0.88rem;
+  padding: 0.65rem 1rem;
+  min-height: 44px;
+}
+
+.btn-on-strip,
+.btn-on-green {
+  margin-top: 0.65rem;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.85);
+  color: #fff;
+}
+
+.btn-on-strip:hover,
+.btn-on-green:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+.eyebrow-light {
+  color: var(--green-100);
+}
+
+.county-service-grid {
+  display: grid;
+  gap: 1.25rem;
+  margin-bottom: 2rem;
+}
+
+.county-service-card {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--radius);
+  padding: 1.35rem 1.25rem;
+  backdrop-filter: blur(6px);
+}
+
+.county-service-card h3 {
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  margin-bottom: 0.35rem;
+}
+
+.county-service-card h3 a {
+  color: #fff;
+  text-decoration: none;
+}
+
+.county-service-card h3 a:hover {
+  color: var(--green-100);
+  text-decoration: underline;
+}
+
+.county-service-cities {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--green-100);
+  margin-bottom: 0.5rem;
+}
+
+.county-service-benefit {
+  font-size: 0.95rem;
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.county-service-card ul {
+  margin: 0 0 1rem 1.1rem;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.county-service-card li {
+  margin-bottom: 0.35rem;
+  line-height: 1.45;
+}
+
+.county-service-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.county-service-card .btn-secondary {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.7);
+  color: #fff;
+}
+
+.county-service-card .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+#counties-we-serve .cta-phone-strip {
+  background: rgba(0, 0, 0, 0.2);
+  box-shadow: none;
+}
+
 .county-detail .county-cities {
   font-weight: 600;
   color: var(--green-700);
@@ -1303,6 +1464,15 @@ a:hover {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .county-service-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .county-service-cta {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
   .detail-cta-row {
     flex-direction: row;
     flex-wrap: wrap;
@@ -1312,6 +1482,10 @@ a:hover {
 
 @media (min-width: 900px) {
   .core-card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .county-service-grid {
     grid-template-columns: repeat(3, 1fr);
   }
 

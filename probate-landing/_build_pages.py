@@ -2,6 +2,8 @@
 """Generate Core 30 static pages — run once when structure changes."""
 from pathlib import Path
 
+from _services_data import SERVICES, SERVICE_COUNTIES
+
 PHONE = "(615) 669-7075"
 PHONE_TEL = "6156697075"
 PHONE_LINK = f'Call or text <strong>{PHONE}</strong>'
@@ -101,8 +103,16 @@ def cta_block(extra: str = "") -> str:
     return f"""
     <div class="detail-cta-row">
       <a href="tel:{PHONE_TEL}" class="btn btn-primary">{PHONE_LINK}</a>
-      <a href="/roadmap/" class="btn btn-secondary">Free Guardian Kit Roadmap</a>
+      <a href="/roadmap/" class="btn btn-secondary">Get your free Guardian Kit</a>
       {extra}
+    </div>"""
+
+
+def service_cta_block() -> str:
+    return f"""
+    <div class="detail-cta-row service-cta-row">
+      <a href="tel:{PHONE_TEL}" class="btn btn-primary btn-cta-phone">{PHONE_LINK}</a>
+      <a href="/roadmap/" class="btn btn-secondary">Get your free Guardian Kit</a>
     </div>"""
 
 
@@ -111,44 +121,67 @@ def internal_links() -> str:
     <p class="internal-links">Also explore: <a href="/roadmap/">Guardian Kit &amp; Family Roadmap</a> · <a href="/services/">All Services</a> · <a href="/counties/">Counties We Serve</a> · <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>"""
 
 
-SERVICES = [
-    ("probate-specialist", "🛡️", "Probate Real Estate Specialist",
-     "Court-aware probate property guidance for Middle Tennessee heirs.",
-     ["Compassionate first call — no pressure, no pitch", "Coordinate with your probate attorney on authority to sell", "Free CMA & Net Sheet for every heir", "Guardian Kit with real options and vendor network"]),
-    ("inherited-home-sales", "🏠", "Inherited Home Sales",
-     "Sell an inherited house with clarity — as-is cash, funded repairs, or full MLS.",
-     ["Compare list vs. cash on one Net Sheet", "Out-of-state heir coordination", "Sibling buyout feasibility math", "Subject to court approval on all paths"]),
-    ("muniment-title", "📜", "Muniment of Title Assistance",
-     "Tennessee's faster transfer path when the estate may qualify.",
-     ["Education — never legal advice", "Attorney referral from vetted rolodex", "Property valuation for retain-or-sell decisions", "Timeline alignment with muniment filings"]),
-    ("cash-offers-probate", "⚡", "Cash Offers for Probate Properties",
-     "Multiple competing cash buyers — as-is, no showings, fast certainty.",
-     ["Express Offers network through eXp Realty", "48–72 hour competing bids typical", "Ideal for overwhelmed or out-of-state heirs", "Subject to court approval"]),
-    ("estate-coordination", "🧭", "Full-Service Estate Coordination",
-     "One Project Coordinator — we handle the heavy lifting so you focus on family.",
-     ["Vendor dispatch: attorneys, insurance, estate sales", "Weekly status — you always know what's happening", "Attorney loop-ins at every milestone", "Four paths presented with real numbers"]),
-    ("cleanout", "📦", "House Clean-Out Coordination",
-     "Contents, junk, attic, garage — dispatched and tracked for you.",
-     ["Estate sale + haul-off vendors from our rolodex", "Sentimental item shipping for out-of-state heirs", "Dumpster and bulk removal coordination", "$0 upfront options where available"]),
-    ("repair-staging", "🔨", "Repair & Staging Coordination",
-     "Funded repairs at closing — list at peak value without heir arguments.",
-     ["Roof, HVAC, paint, flooring — repaid at settlement", "Light staging for MLS when ARV upside warrants it", "Contractor bids managed by your coordinator", "Compare repair path vs. cash on Net Sheet"]),
-    ("senior-move", "💙", "Senior Move Assistance",
-     "Care transitions and estate moves with compassion — before and during probate.",
-     ["Hospice & skilled-nursing referral support", "Pre-death house burden planning", "Movers and packing for heir relocations", "Medicaid planning introductions — attorney-led"]),
-    ("buying-selling", "🔄", "Property Buying & Sales",
-     "Buy, sell, or hold inherited property — neutral guidance for the whole family.",
-     ["Retention analysis vs. sale proceeds", "Rental / property management referrals", "Traditional listing for maximum net", "Cash backup if listing timeline slips"]),
-    ("investing", "📈", "Real Estate Investing",
-     "Investor network for estates that need speed, certainty, or as-is exit.",
-     ["Multiple vetted cash buyers — never one lowball", "Middle TN investor desk backup bids", "Wholesale-friendly timelines aligned with court", "Transparent comparison on your Net Sheet"]),
-    ("sellers-agent", "📋", "Seller's Agent Services",
-     "Full MLS representation with probate-aware marketing and disclosure.",
-     ["Probate-specific showing and disclosure strategy", "Funded repairs available at closing", "Professional photography and MLS launch", "Commission structure explained on Net Sheet"]),
-    ("probate-specialist-field", "🤝", "Probate Real Estate Specialist — Field Team",
-     "Branton Walker walks with families in the field — Scott coordinates the system.",
-     ["Same-day compassionate callbacks", "Property walk-throughs at your pace", "Guardian Kit delivery at kitchen table", "Mobile-friendly support across Middle TN"]),
-]
+def render_related_links(related: list) -> str:
+    parts = [f'<a href="{href}">{label}</a>' for label, href in related]
+    parts.extend([
+        '<a href="/roadmap/">Family Roadmap</a>',
+        '<a href="/counties/">Counties We Serve</a>',
+        '<a href="/services/#counties-we-serve">Your County</a>',
+    ])
+    return f'<p class="service-related">Related services: {" · ".join(parts)}</p>'
+
+
+def render_service_detail(svc: dict) -> str:
+    paragraphs = "".join(f"<p>{p}</p>" for p in svc["paragraphs"])
+    bullets = "".join(f"<li>{b}</li>" for b in svc["bullets"])
+    return f"""
+    <article class="service-detail" id="{svc['id']}">
+      <div class="container service-detail-inner">
+        <p class="eyebrow">{svc['icon']} Service</p>
+        <h2>{svc['name']}</h2>
+        <p class="service-benefit-headline">{svc['benefit_headline']}</p>
+        <div class="service-detail-body">
+          {paragraphs}
+        </div>
+        <ul class="service-detail-bullets">{bullets}</ul>
+        {service_cta_block()}
+        {render_related_links(svc['related'])}
+        {internal_links()}
+      </div>
+    </article>"""
+
+
+def render_service_counties_block() -> str:
+    cards = []
+    for c in SERVICE_COUNTIES:
+        bl = "".join(f"<li>{b}</li>" for b in c["bullets"])
+        county_href = f"/counties/#{c['id']}" if c["id"] != "middle-tn" else "/counties/#middle-tn"
+        cards.append(f"""
+        <article class="county-service-card" id="county-{c['id']}">
+          <p class="eyebrow">📍 {c['name']}</p>
+          <h3><a href="{county_href}">{c['name']}</a></h3>
+          <p class="county-service-cities">{c['cities']}</p>
+          <p class="county-service-benefit">{c['benefit']}</p>
+          <ul>{bl}</ul>
+          <div class="county-service-cta">
+            <a href="tel:{PHONE_TEL}" class="btn btn-primary btn-sm">{PHONE_LINK}</a>
+            <a href="/roadmap/" class="btn btn-secondary btn-sm">Get your free Guardian Kit</a>
+          </div>
+        </article>""")
+    return f"""
+    <section class="section section-green" id="counties-we-serve">
+      <div class="container">
+        <p class="eyebrow eyebrow-light">Local expertise</p>
+        <h2 class="section-title section-title-light">Counties We Serve</h2>
+        <p class="section-lead section-lead-light">Probate property support from Nashville to every corner of Middle Tennessee — same Guardian Kit, same compassionate team. Explore our full <a href="/counties/">county guides</a> or call now.</p>
+        <div class="county-service-grid">{"".join(cards)}</div>
+        <div class="cta-phone-strip">
+          <p>Inherited a house in Davidson, Sumner, Wilson, Rutherford, or Williamson? One call starts everything.</p>
+          <a href="tel:{PHONE_TEL}" class="btn btn-light">{PHONE_LINK}</a>
+          <a href="/roadmap/" class="btn btn-secondary btn-on-green">Get your free Guardian Kit</a>
+        </div>
+      </div>
+    </section>"""
 
 COUNTIES = [
     ("davidson", "Davidson County", "Nashville, Hermitage, Madison, Antioch, Bellevue",
@@ -179,33 +212,27 @@ COUNTIES = [
 def build_services() -> str:
     cards = []
     details = []
-    for sid, icon, name, lead, bullets in SERVICES:
+    for svc in SERVICES:
         cards.append(f"""
-        <a class="core-card" href="#{sid}">
-          <span class="core-card-icon" aria-hidden="true">{icon}</span>
-          <h2>{name}</h2>
-          <p>{lead}</p>
+        <a class="core-card" href="#{svc['id']}">
+          <span class="core-card-icon" aria-hidden="true">{svc['icon']}</span>
+          <h2>{svc['name']}</h2>
+          <p>{svc['lead']}</p>
           <span class="core-card-arrow">Learn more →</span>
         </a>""")
-        bl = "".join(f"<li>{b}</li>" for b in bullets)
-        details.append(f"""
-    <article class="service-detail" id="{sid}">
-      <div class="container narrow">
-        <p class="eyebrow">{icon} Service</p>
-        <h2>{name}</h2>
-        <p class="service-detail-lead">{lead}</p>
-        <ul>{bl}</ul>
-        {cta_block()}
-        {internal_links()}
-      </div>
-    </article>""")
+        details.append(render_service_detail(svc))
     body = f"""
     <section class="page-hero">
       <div class="container">
         <p class="eyebrow">Probate Guardians TN · Core Services</p>
         <h1>Services for Middle Tennessee Probate Families</h1>
-        <p class="page-hero-lead">One support system — the same compassionate tone as your <a href="/roadmap/">Guardian Kit</a>. Tap a service below or call <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a>.</p>
+        <p class="page-hero-lead">One support system — the same compassionate tone as your <a href="/roadmap/">Guardian Kit</a>. Twelve services, six core counties, one number: <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a>.</p>
         <p class="phone-line"><a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
+        <div class="core-hub-links">
+          <a href="/roadmap/" class="btn btn-secondary">Get your free Guardian Kit</a>
+          <a href="#counties-we-serve" class="btn btn-secondary">Counties We Serve</a>
+          <a href="/counties/" class="btn btn-secondary">Full County Guides</a>
+        </div>
       </div>
     </section>
     <section class="section">
@@ -214,14 +241,16 @@ def build_services() -> str:
         <div class="cta-phone-strip">
           <p>One call. Everything handled. We remove the house burden so you can focus on family.</p>
           <a href="tel:{PHONE_TEL}" class="btn btn-light">{PHONE_LINK}</a>
+          <a href="/roadmap/" class="btn btn-secondary btn-on-strip">Get your free Guardian Kit</a>
         </div>
       </div>
     </section>
-    <section class="section section-warm">{"".join(details)}
-    </section>"""
+    <section class="section section-warm services-detail-section">{"".join(details)}
+    </section>
+    {render_service_counties_block()}"""
     return shell(
         "Probate Services Middle Tennessee | Probate Guardians TN",
-        "12 probate real estate services for Middle TN heirs — inherited home sales, muniment, cash offers, clean-out, repairs, senior moves, and full estate coordination. Call (615) 669-7075.",
+        "12 probate real estate services for Middle TN heirs — inherited home sales, muniment, cash offers, clean-out, repairs, senior moves, and full estate coordination in Davidson, Sumner, Wilson, Rutherford & Williamson. Call (615) 669-7075.",
         "https://probateguardians.com/services/",
         "../", "../",
         {"svc": True},
