@@ -154,7 +154,7 @@
         <p class="hero-sub">One call to Probate Guardians TN removes the entire weight — paperwork, clean-out, repairs, cash offers, listing, insurance, everything — so you can focus on family instead of stress.</p>
         <div class="hero-cta-row">
           <a href="tel:6156697075" class="btn btn-hero-phone">Call or text (615) 669-7075</a>
-          <a href="/roadmap/" class="btn btn-hero-kit">Get your free Guardian Kit</a>
+          <a href="#guardian-kit" class="btn btn-hero-kit js-guardian-kit-trigger">Get your free Guardian Kit</a>
         </div>
         <ul class="trust-row" aria-label="Trust signals">
           <li>Free CMA &amp; Net Sheet</li>
@@ -301,7 +301,7 @@
           <input type="email" id="guide-email" name="email" placeholder="Email address" autocomplete="email" required />
           <label for="guide-county" class="visually-hidden">County (optional)</label>
           <input type="text" id="guide-county" name="county" placeholder="County (e.g. Sumner, Wilson)" autocomplete="address-level2" />
-          <button type="submit" class="btn btn-primary btn-block">Get Your Free Guardian Kit</button>
+          <button type="button" class="btn btn-primary btn-block js-guardian-kit-trigger">Get Your Free Guardian Kit</button>
         </form>
         <p class="form-note">We respect your inbox. One kit, occasional helpful updates — unsubscribe anytime.</p>
         <p class="form-success hidden" id="form-success" role="status">Thank you! We'll send your Guardian Kit shortly. Questions? <a href="tel:6156697075">Call or text <strong>(615) 669-7075</strong></a>.</p>
@@ -316,7 +316,7 @@
         <div class="cta-phone-strip">
           <p>We remove the house burden so you can focus on family.</p>
           <a href="tel:6156697075" class="btn btn-hero-phone">Call or text (615) 669-7075</a>
-          <a href="/roadmap/" class="btn btn-secondary btn-on-green">Get your free Guardian Kit</a>
+          <a href="#guardian-kit" class="btn btn-secondary btn-on-green js-guardian-kit-trigger">Get your free Guardian Kit</a>
         </div>
       </div>
     </section>
@@ -346,6 +346,58 @@
   <a href="tel:6156697075" class="mobile-call-fab" aria-label="Call or text (615) 669-7075">
     📞
   </a>
+
+  <!-- Netlify Forms: build-time detection -->
+  <form name="guardian-kit-lead" data-netlify="true" data-netlify-honeypot="bot-field" hidden>
+    <input type="hidden" name="form-name" value="guardian-kit-lead" />
+    <input type="text" name="full-name" />
+    <input type="email" name="email" />
+    <input type="tel" name="phone" />
+    <input type="text" name="county" />
+  </form>
+
+  <div class="gk-modal" id="guardian-kit-modal" hidden aria-hidden="true">
+    <div class="gk-modal-backdrop" data-gk-close></div>
+    <div class="gk-modal-dialog" role="dialog" aria-labelledby="gk-modal-title" aria-modal="true">
+      <button type="button" class="gk-modal-close" data-gk-close aria-label="Close">&times;</button>
+      <div class="gk-modal-panel" id="gk-modal-form-panel">
+        <p class="eyebrow">Free · No spam · Middle Tennessee</p>
+        <h2 id="gk-modal-title">Get your free Guardian Kit</h2>
+        <p class="gk-modal-lead">A calm, plain-English roadmap for families navigating inherited property — delivered instantly.</p>
+        <form id="guardian-kit-modal-form" class="gk-modal-form" novalidate>
+          <input type="hidden" name="form-name" value="guardian-kit-lead" />
+          <p class="gk-modal-field hidden" aria-hidden="true">
+            <label>Don't fill this out <input name="bot-field" tabindex="-1" autocomplete="off" /></label>
+          </p>
+          <label class="gk-modal-label" for="gk-full-name">Full Name <span aria-hidden="true">*</span></label>
+          <input type="text" id="gk-full-name" name="full-name" required autocomplete="name" placeholder="Your full name" />
+          <label class="gk-modal-label" for="gk-email">Email Address <span aria-hidden="true">*</span></label>
+          <input type="email" id="gk-email" name="email" required autocomplete="email" placeholder="you@email.com" />
+          <label class="gk-modal-label" for="gk-phone">Phone Number <span class="gk-optional">(optional)</span></label>
+          <input type="tel" id="gk-phone" name="phone" autocomplete="tel" placeholder="(615) 555-0100" />
+          <label class="gk-modal-label" for="gk-county">County</label>
+          <select id="gk-county" name="county" required>
+            <option value="" disabled selected>Select your county</option>
+            <option value="Davidson">Davidson</option>
+            <option value="Sumner">Sumner</option>
+            <option value="Wilson">Wilson</option>
+            <option value="Williamson">Williamson</option>
+            <option value="Rutherford">Rutherford</option>
+            <option value="Other">Other</option>
+          </select>
+          <p class="gk-modal-error hidden" id="gk-modal-error" role="alert"></p>
+          <button type="submit" class="btn btn-primary btn-block gk-modal-submit">Get your free Guardian Kit</button>
+        </form>
+      </div>
+      <div class="gk-modal-panel hidden" id="gk-modal-success-panel" role="status">
+        <p class="gk-modal-success-icon" aria-hidden="true">✓</p>
+        <h2>Thank you!</h2>
+        <p class="gk-modal-success-text">Your Guardian Kit is on the way. Branton will personally follow up within 24 hours.</p>
+        <a href="/guardian-kit.pdf" class="btn btn-hero-phone btn-block gk-modal-download" download="Probate-Guardians-Guardian-Kit.pdf">Download Guardian Kit PDF</a>
+        <button type="button" class="btn btn-secondary btn-block" data-gk-close>Close</button>
+      </div>
+    </div>
+  </div>
 
   <script src="script.js"></script>
 </body>

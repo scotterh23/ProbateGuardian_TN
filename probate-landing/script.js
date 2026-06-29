@@ -4,17 +4,6 @@
     yearEl.textContent = String(new Date().getFullYear());
   }
 
-  var form = document.getElementById("guide-form");
-  var success = document.getElementById("form-success");
-  if (form && success) {
-    form.addEventListener("submit", function (e) {
-      e.preventDefault();
-      form.classList.add("hidden");
-      success.classList.remove("hidden");
-      success.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
-  }
-
   var pdfBtn = document.getElementById("roadmap-pdf-btn");
   if (pdfBtn) {
     pdfBtn.addEventListener("click", function () {
@@ -46,6 +35,146 @@
       } else {
         showNote("Copy this link: " + url);
       }
+    });
+  }
+
+  var modal = document.getElementById("guardian-kit-modal");
+  if (!modal) {
+    return;
+  }
+
+  var formPanel = document.getElementById("gk-modal-form-panel");
+  var successPanel = document.getElementById("gk-modal-success-panel");
+  var modalForm = document.getElementById("guardian-kit-modal-form");
+  var modalError = document.getElementById("gk-modal-error");
+  var triggers = document.querySelectorAll(".js-guardian-kit-trigger");
+  var closeEls = modal.querySelectorAll("[data-gk-close]");
+  var lastFocus = null;
+
+  function showError(message) {
+    if (!modalError) return;
+    modalError.textContent = message;
+    modalError.classList.remove("hidden");
+  }
+
+  function clearError() {
+    if (!modalError) return;
+    modalError.textContent = "";
+    modalError.classList.add("hidden");
+  }
+
+  function resetModal() {
+    if (formPanel) formPanel.classList.remove("hidden");
+    if (successPanel) successPanel.classList.add("hidden");
+    clearError();
+    if (modalForm) modalForm.reset();
+  }
+
+  function openModal() {
+    lastFocus = document.activeElement;
+    resetModal();
+    modal.hidden = false;
+    modal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("gk-modal-open");
+    var firstInput = document.getElementById("gk-full-name");
+    if (firstInput) {
+      window.setTimeout(function () {
+        firstInput.focus();
+      }, 50);
+    }
+  }
+
+  function closeModal() {
+    modal.hidden = true;
+    modal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("gk-modal-open");
+    if (lastFocus && lastFocus.focus) {
+      lastFocus.focus();
+    }
+  }
+
+  function showSuccess() {
+    if (formPanel) formPanel.classList.add("hidden");
+    if (successPanel) successPanel.classList.remove("hidden");
+    clearError();
+    var downloadBtn = successPanel && successPanel.querySelector(".gk-modal-download");
+    if (downloadBtn) {
+      window.setTimeout(function () {
+        downloadBtn.focus();
+      }, 50);
+    }
+  }
+
+  triggers.forEach(function (trigger) {
+    trigger.addEventListener("click", function (e) {
+      e.preventDefault();
+      openModal();
+    });
+  });
+
+  closeEls.forEach(function (el) {
+    el.addEventListener("click", closeModal);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (modal.hidden) return;
+    if (e.key === "Escape") {
+      closeModal();
+    }
+  });
+
+  if (modalForm) {
+    modalForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      clearError();
+
+      if (!modalForm.reportValidity()) {
+        return;
+      }
+
+      var data = new FormData(modalForm);
+      var params = new URLSearchParams();
+      params.append("form-name", "guardian-kit-lead");
+      data.forEach(function (value, key) {
+        if (key !== "bot-field" || value) {
+          params.append(key, value);
+        }
+      });
+
+      var submitBtn = modalForm.querySelector(".gk-modal-submit");
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sending…";
+      }
+
+      fetch("/", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      })
+        .then(function (res) {
+          if (!res.ok) {
+            throw new Error("submit failed");
+          }
+          showSuccess();
+        })
+        .catch(function () {
+          showError("Something went wrong. Please call or text (615) 669-7075 and we'll send your kit.");
+        })
+        .finally(function () {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = "Get your free Guardian Kit";
+          }
+        });
+    });
+  }
+
+  var legacyForm = document.getElementById("guide-form");
+  if (legacyForm) {
+    legacyForm.addEventListener("submit", function (e) {
+      e.preventDefault();
+      openModal();
     });
   }
 })();
