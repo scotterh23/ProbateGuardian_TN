@@ -401,6 +401,23 @@ st.markdown(
         line-height: 1.2 !important;
         padding: 0.6rem 0.35rem !important;
     }
+    .gk-action-marker { display: none; }
+    .gk-action-marker + div [data-testid="stLinkButton"] > a,
+    .gk-action-marker + div [data-testid="stButton"] > button,
+    .gk-action-marker + div [data-testid="stDownloadButton"] > button {
+        min-height: 3.5rem !important;
+        font-size: 1rem !important;
+        font-weight: 800 !important;
+    }
+    .gk-action-marker + div [data-testid="stLinkButton"] > a {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background: linear-gradient(135deg, #1a4d32, #2d6a4f) !important;
+        color: #faf6ee !important;
+        border-radius: 10px !important;
+        text-decoration: none !important;
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -3217,6 +3234,450 @@ Schedule a complimentary **10–15 minute call** — phone or in-person at the p
 *Not legal advice · All sales subject to court approval where required · © {year} Scott Hardesty, eXp Realty* 🏠"""
 
 
+GUARDIAN_KIT_ROADMAP_STEPS = [
+    ("🌿", "Pause & breathe", "Grief and paperwork together is overwhelming. Gather the death certificate, will, and property address — one folder, one step."),
+    ("🏠", "Secure the home", "Lock up, forward mail, keep vacant-home insurance active, and name one calm heir contact."),
+    ("⚖️", "Probate attorney first", "Your attorney handles court. We coordinate property only — always subject to court approval."),
+    ("📊", "Real numbers for every heir", "Free CMA + Net Sheet — not a Zillow guess. Same facts for siblings."),
+    ("📋", "Muniment of Title?", "TN shortcut when will is valid and debts are clear. Attorney decides; we align timelines."),
+    ("🛤️", "Choose your path", "List for max value, Express cash, funded repairs, or hold — zero pressure."),
+    ("🤝", "We handle heavy lifting", "Vendors, buyers, signage, insurance, clean-out — you focus on family."),
+]
+
+GUARDIAN_KIT_VENDOR_FALLBACKS = {
+    "Probate Attorney": [
+        ("Wilson County Probate Group", "615-449-4800", "Lebanon · Mt. Juliet"),
+        ("Davidson Estate Counsel", "615-244-3300", "Nashville"),
+        ("Rutherford Probate Partners", "615-896-2200", "Murfreesboro"),
+    ],
+    "Title Company": [
+        ("Stewart Title — Wilson", "615-444-2100", "Lebanon"),
+        ("Fidelity National — Davidson", "615-320-8800", "Nashville"),
+    ],
+    "CPA / Tax Professional": [
+        ("Middle TN Estate CPA", "615-773-4100", "Stepped-up basis · K-1"),
+        ("Wilson Tax Advisors", "615-444-9900", "Estate returns"),
+    ],
+    "Insurance for vacant homes": [
+        ("Vacant Home TN Specialist", "615-555-0142", "Liability + vacancy rider"),
+        ("Farm Bureau — Wilson", "615-444-3300", "Estate property policies"),
+    ],
+    "Property Maintenance / Lawn / Security": [
+        ("GreenKeep Lawn — Wilson", "615-555-0188", "Weekly mow + drive-by"),
+        ("SecureEstate Checks", "615-555-0199", "Lockbox · photo logs"),
+    ],
+    "Property Management / Rental": [
+        ("Middle TN Estate PM", "615-555-0177", "Short-term hold option"),
+    ],
+    "Deep Cleaning & Staging": [
+        ("Sparkle Estate Clean", "615-555-0166", "Post-cleanout deep clean"),
+        ("Wilson Staging Co.", "615-555-0155", "Light staging for list"),
+    ],
+    "Estate Sale Companies": [
+        ("Heirloom Estate Sales", "615-555-0133", "On-site tag sale"),
+        ("Wilson Online Estate", "615-555-0122", "Hybrid online + onsite"),
+    ],
+    "Junk Removal / Dumpster": [
+        ("DumpCo Wilson", "615-555-0111", "20-yd dumpster · haul-off"),
+        ("QuickHaul Middle TN", "615-555-0100", "Attic · garage · bulk"),
+    ],
+    "Movers": [
+        ("Careful Moves MTN", "615-555-0099", "Heir relocations"),
+        ("Heirloom Packing & Ship", "615-555-0088", "Out-of-state shipping"),
+    ],
+    "General Contractors / Handyman / Repairs": [
+        ("Funded Repairs Partner", "615-555-0077", "Roof · HVAC · paint — paid at close"),
+        ("Wilson Handyman Pro", "615-555-0066", "Pre-list punch list"),
+    ],
+    "Cash Buyers / Investor": [
+        ("eXp Express Offers Network", "615-953-0758", "Multiple vetted cash buyers"),
+        ("Middle TN Investor Desk", "615-555-0055", "Backup cash bid"),
+    ],
+    "Traditional Listing Agent": [
+        ("Scott Hardesty — eXp Realty", "615-953-0758", "Full MLS · Mt. Juliet"),
+    ],
+    "Buyout / Heir Mediation": [
+        ("Sibling Buyout Mediation", "615-555-0044", "Neutral third-party math"),
+    ],
+}
+
+
+def _gk_esc(value: str) -> str:
+    return html.escape(str(value or "").strip())
+
+
+def _gk_vendor_entries(vendors: dict, category: str) -> list:
+    resolved = VENDOR_LEGACY_ALIASES.get(category, category)
+    entry = vendors.get(resolved, {})
+    rows = []
+    if isinstance(entry, str) and entry.strip():
+        rows.append((entry.strip(), "", ""))
+    elif isinstance(entry, dict):
+        for i in range(1, VENDOR_SLOTS + 1):
+            contact = _coerce_vendor_contact(entry.get(f"vendor_{i}", ""))
+            if contact["name"] or contact["phone"]:
+                rows.append((contact["name"], contact["phone"], contact["notes"]))
+        notes = (entry.get("area_notes") or "").strip()
+        if notes and rows:
+            rows[0] = (rows[0][0], rows[0][1], notes if not rows[0][2] else rows[0][2])
+    if not rows:
+        rows = list(GUARDIAN_KIT_VENDOR_FALLBACKS.get(category, []))
+    return rows[:4]
+
+
+def _gk_vendors_html(vendors: dict) -> str:
+    blocks = []
+    for category in VENDOR_CATEGORIES:
+        entries = _gk_vendor_entries(vendors, category)
+        if not entries:
+            continue
+        item_parts = []
+        for name, phone, notes in entries:
+            line = f"<li><strong>{_gk_esc(name)}</strong>"
+            if phone:
+                line += f" · {_gk_esc(phone)}"
+            if notes:
+                line += f'<br><span class="gk-vendor-note">{_gk_esc(notes)}</span>'
+            item_parts.append(line + "</li>")
+        items = "".join(item_parts)
+        blocks.append(
+            f'<div class="gk-vendor-card"><h4>{_gk_esc(category)}</h4><ul>{items}</ul></div>'
+        )
+    return "".join(blocks)
+
+
+def guardian_kit_family_share_text(parsed: dict) -> str:
+    heir = (parsed.get("heirs") or "your family").split("(")[0].strip()
+    decedent = parsed.get("decedent") or "your loved one"
+    address = parsed.get("address") or "the property"
+    return (
+        f"Hi {heir},\n\n"
+        f"Branton Walker here with ProbateGuardian TN (Scott Hardesty's team). "
+        f"We prepared your Guardian Kit for {decedent}'s home at {address}.\n\n"
+        f"One call — we handle clean-out, insurance, vendors, and every sale path "
+        f"(cash, funded repairs, or list). Zero pressure.\n\n"
+        f"Free 7-step roadmap: https://probateguardians.com/roadmap/\n"
+        f"Call/text Scott: 615-953-0758 · Branton is your field partner.\n\n"
+        f"With compassion,\nBranton Walker · ProbateGuardian TN"
+    )
+
+
+def guardian_kit_social_worker_text(parsed: dict) -> str:
+    decedent = parsed.get("decedent") or "resident"
+    address = parsed.get("address") or "family property"
+    return (
+        f"Hi — Branton Walker, ProbateGuardian TN. We remove the house burden so families "
+        f"can focus on care. Even before probate we coordinate placement support, Medicaid "
+        f"planning referrals, clean-out, insurance & signage.\n\n"
+        f"Guardian Kit ready for {decedent} / {address}. "
+        f"One-pager for your office? Scott 615-953-0758. Zero cost to families."
+    )
+
+
+def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = False) -> str:
+    decedent = _gk_esc(parsed.get("decedent") or "Estate")
+    address = _gk_esc(parsed.get("address") or "Address TBD")
+    county = _gk_esc(parsed.get("county") or "Middle Tennessee")
+    heir = _gk_esc(parsed.get("heirs") or "Estate Heirs / Executor")
+    heir_first = _gk_esc((parsed.get("heirs") or "Friend").split("(")[0].strip())
+    today = datetime.now().strftime("%B %d, %Y")
+    year = datetime.now().year
+    vendors_html = _gk_vendors_html(vendors)
+    roadmap_html = "".join(
+        f'<div class="gk-road-step">'
+        f'<span class="gk-road-icon">{icon}</span>'
+        f'<div><strong>{_gk_esc(title)}</strong><p>{_gk_esc(desc)}</p></div></div>'
+        for icon, title, desc in GUARDIAN_KIT_ROADMAP_STEPS
+    )
+
+    styles = """
+    .gk-root {
+        --gk-green-dark: #142d22;
+        --gk-green: #1f4d35;
+        --gk-green-mid: #2d6a4f;
+        --gk-cream: #faf6ee;
+        --gk-cream-muted: #ede8dc;
+        --gk-ink: #1a2e22;
+        --gk-gold: #c9a227;
+        font-family: Georgia, 'Times New Roman', serif;
+        color: var(--gk-ink);
+        line-height: 1.55;
+        max-width: 42rem;
+        margin: 0 auto 1.5rem auto;
+    }
+    .gk-root * { box-sizing: border-box; }
+    .gk-hero {
+        background: linear-gradient(145deg, var(--gk-green-dark) 0%, var(--gk-green) 55%, var(--gk-green-mid) 100%);
+        color: var(--gk-cream);
+        border-radius: 16px;
+        padding: 1.35rem 1.2rem 1.2rem 1.2rem;
+        text-align: center;
+        box-shadow: 0 8px 32px rgba(20, 45, 34, 0.45);
+        margin-bottom: 1rem;
+    }
+    .gk-hero-badge {
+        display: inline-block;
+        background: var(--gk-gold);
+        color: var(--gk-green-dark);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.25rem 0.65rem;
+        border-radius: 999px;
+        margin-bottom: 0.65rem;
+    }
+    .gk-hero h1 {
+        font-size: clamp(1.15rem, 4.5vw, 1.45rem);
+        font-weight: 800;
+        line-height: 1.35;
+        margin: 0 0 0.5rem 0;
+        color: var(--gk-cream) !important;
+    }
+    .gk-hero-sub { font-size: 0.92rem; opacity: 0.92; margin: 0; }
+    .gk-meta {
+        background: var(--gk-cream);
+        border: 2px solid var(--gk-green-mid);
+        border-radius: 12px;
+        padding: 1rem 1.1rem;
+        margin-bottom: 0.85rem;
+    }
+    .gk-meta h2 { font-size: 1.05rem; margin: 0 0 0.2rem 0; color: var(--gk-green-dark) !important; }
+    .gk-meta p { margin: 0.15rem 0; font-size: 0.9rem; }
+    .gk-meta .gk-phone { font-size: 1.15rem; font-weight: 800; color: var(--gk-green); }
+    .gk-section {
+        background: var(--gk-cream);
+        border-radius: 12px;
+        padding: 1rem 1.05rem;
+        margin-bottom: 0.75rem;
+        border-left: 4px solid var(--gk-green-mid);
+    }
+    .gk-section h3 {
+        font-size: 1rem;
+        color: var(--gk-green-dark) !important;
+        margin: 0 0 0.5rem 0;
+    }
+    .gk-section p, .gk-section li { font-size: 0.88rem; margin: 0.35rem 0; }
+    .gk-hospice {
+        background: linear-gradient(135deg, #1a3d2e 0%, #254d3a 100%);
+        color: var(--gk-cream);
+        border-left-color: var(--gk-gold);
+    }
+    .gk-hospice h3 { color: var(--gk-cream) !important; }
+    .gk-roadmap { display: flex; flex-direction: column; gap: 0.55rem; }
+    .gk-road-step {
+        display: flex; gap: 0.65rem; align-items: flex-start;
+        background: var(--gk-cream-muted);
+        border-radius: 10px;
+        padding: 0.55rem 0.65rem;
+    }
+    .gk-road-icon { font-size: 1.35rem; line-height: 1; flex-shrink: 0; }
+    .gk-road-step strong { display: block; font-size: 0.88rem; color: var(--gk-green-dark); }
+    .gk-road-step p { margin: 0.15rem 0 0 0; font-size: 0.8rem; color: #3d4f44; }
+    .gk-tiers { display: flex; flex-direction: column; gap: 0.6rem; }
+    .gk-tier {
+        border-radius: 10px;
+        padding: 0.75rem 0.85rem;
+        border: 2px solid var(--gk-green-mid);
+    }
+    .gk-tier-high { background: linear-gradient(135deg, #e8f5ec, var(--gk-cream)); }
+    .gk-tier-mid { background: var(--gk-cream-muted); }
+    .gk-tier-low { background: #f5f2ea; border-style: dashed; }
+    .gk-tier h4 { margin: 0 0 0.35rem 0; font-size: 0.92rem; color: var(--gk-green-dark) !important; }
+    .gk-tier .gk-price { font-weight: 800; color: var(--gk-green); font-size: 0.85rem; }
+    .gk-tier ul { margin: 0.35rem 0 0 0; padding-left: 1.1rem; }
+    .gk-warn {
+        background: #fff8e6;
+        border: 2px solid var(--gk-gold);
+        border-radius: 10px;
+        padding: 0.75rem 0.85rem;
+        margin-bottom: 0.75rem;
+    }
+    .gk-warn h3 { color: #7a5c00 !important; }
+    .gk-signage {
+        font-family: 'Arial Black', Arial, sans-serif;
+        background: #1a1a1a;
+        color: #f5f0e6;
+        text-align: center;
+        padding: 0.85rem 0.5rem;
+        border: 3px solid #c9a227;
+        border-radius: 6px;
+        font-size: clamp(0.72rem, 3vw, 0.88rem);
+        letter-spacing: 0.04em;
+        margin: 0.5rem 0;
+    }
+    .gk-bullets { display: flex; flex-direction: column; gap: 0.5rem; }
+    .gk-bullet-card {
+        background: var(--gk-cream-muted);
+        border-radius: 10px;
+        padding: 0.65rem 0.75rem;
+    }
+    .gk-bullet-card h4 { margin: 0 0 0.3rem 0; font-size: 0.88rem; color: var(--gk-green) !important; }
+    .gk-bullet-card ul { margin: 0; padding-left: 1rem; font-size: 0.82rem; }
+    .gk-vendors-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.5rem;
+    }
+    @media (min-width: 480px) {
+        .gk-vendors-grid { grid-template-columns: 1fr 1fr; }
+    }
+    .gk-vendor-card {
+        background: var(--gk-cream-muted);
+        border-radius: 8px;
+        padding: 0.55rem 0.65rem;
+        font-size: 0.78rem;
+    }
+    .gk-vendor-card h4 {
+        margin: 0 0 0.3rem 0;
+        font-size: 0.78rem;
+        color: var(--gk-green-dark) !important;
+    }
+    .gk-vendor-card ul { margin: 0; padding-left: 1rem; }
+    .gk-vendor-note { color: #5a6b5f; font-size: 0.72rem; }
+    .gk-cta {
+        background: var(--gk-green-dark);
+        color: var(--gk-cream);
+        border-radius: 12px;
+        padding: 1rem;
+        text-align: center;
+        margin-top: 0.5rem;
+    }
+    .gk-cta .gk-phone { font-size: 1.35rem; font-weight: 800; color: var(--gk-gold); }
+    .gk-footer { font-size: 0.72rem; color: #5a6b5f; text-align: center; margin-top: 0.75rem; }
+    @media print {
+        .gk-root { max-width: 100%; }
+        .gk-hero, .gk-hospice, .gk-cta { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    }
+    """
+
+    body = f"""
+<div class="gk-root">
+<style>{styles}</style>
+<div class="gk-hero">
+  <div class="gk-hero-badge">ProbateGuardian Guardian Kit</div>
+  <h1>One Call. Everything Handled.<br>We Remove the House Burden So You Can Focus on Family.</h1>
+  <p class="gk-hero-sub">Compassion · Clarity · Court-aware coordination · Middle Tennessee</p>
+</div>
+
+<div class="gk-meta">
+  <h2>Prepared for {heir}</h2>
+  <p><strong>Estate of {decedent}</strong></p>
+  <p>{address} · {county}</p>
+  <p>Scott Hardesty · eXp Realty · Mount Juliet, TN</p>
+  <p class="gk-phone">📞 615-953-0758 · {PARTNER_NAME}</p>
+  <p style="font-size:0.8rem;color:#5a6b5f;">{today} · Confidential — heirs &amp; authorized reps only</p>
+</div>
+
+<div class="gk-section gk-hospice">
+  <h3>🩺 Pre-Death &amp; Hospice Support</h3>
+  <p>Dear {heir_first}, even <strong>before probate opens</strong> — we coordinate care placement referrals, Medicaid planning introductions, estate clean-out, vacant-home insurance, and professional signage so social workers and families get <strong>peace now</strong>, not panic later.</p>
+  <p><em>We never rush grief. We remove the house burden so you can focus on Mom's care.</em></p>
+</div>
+
+<div class="gk-section">
+  <h3>🗺️ 7-Step Probate Family Roadmap</h3>
+  <div class="gk-roadmap">{roadmap_html}</div>
+  <p style="font-size:0.78rem;margin-top:0.5rem;">Full guide: <strong>probateguardians.com/roadmap</strong></p>
+</div>
+
+<div class="gk-section">
+  <h3>🎯 3-Tier Service Options</h3>
+  <div class="gk-tiers">
+    <div class="gk-tier gk-tier-high">
+      <h4>⭐ High Concierge — Full Project Coordinator</h4>
+      <p class="gk-price">$0 out of pocket to start · We pay initial haul-off ($500–$2,500), lockbox, signage, 1st lawn cut</p>
+      <ul>
+        <li>Every vendor dispatched · sibling buyout math · attorney loop-in</li>
+        <li>Express Offers + funded repairs presented side-by-side on one Net Sheet</li>
+        <li><strong>Best when:</strong> out-of-state heirs, overwhelm, or property needs work</li>
+      </ul>
+    </div>
+    <div class="gk-tier gk-tier-mid">
+      <h4>✓ Middle Path — Coordinated Sale</h4>
+      <p class="gk-price">Listing 5–6% · We pay CMA, Net Sheet, signage kit &amp; vendor scheduling</p>
+      <ul>
+        <li>MLS listing with optional funded repairs at closing ($0 upfront)</li>
+        <li>Express Offers as cash backup if listing stalls</li>
+        <li><strong>Best when:</strong> strong ARV upside, family can wait 60–90 days</li>
+      </ul>
+    </div>
+    <div class="gk-tier gk-tier-low">
+      <h4>◎ Low Touch — Guidance + Rolodex</h4>
+      <p class="gk-price">No upfront fees · Commission only if/when you sell with us</p>
+      <ul>
+        <li>Roadmap, one Net Sheet, attorney &amp; insurance introductions</li>
+        <li>You manage vendors — we stay on call for questions</li>
+        <li><strong>Best when:</strong> local heir with time and DIY comfort</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="gk-warn">
+  <h3>⚠️ Insurance + Signage — Protect the Estate Now</h3>
+  <p><strong>Vacant home insurance</strong> is required once the property is unoccupied. Standard homeowner policies may void after 30–60 days. We connect you with Middle TN vacant-home specialists — <strong>we coordinate so you don't have to chase carriers.</strong></p>
+  <div class="gk-signage">ESTATE PROPERTY — NO TRESPASSING<br>Authorized Access Only · Call 615-953-0758</div>
+  <p style="font-size:0.82rem;">Posted at front entry &amp; rear access · photographed for estate file · deters squatters &amp; copper theft</p>
+</div>
+
+<div class="gk-section">
+  <h3>🚀 Sale Paths — Pick Your Peace of Mind</h3>
+  <div class="gk-bullets">
+    <div class="gk-bullet-card">
+      <h4>Express Offers · Multiple Cash Buyers</h4>
+      <ul>
+        <li>Competing bids in 48–72 hrs · sell 100% as-is · zero showings</li>
+        <li>Close 14–30 days · <strong>subject to court approval</strong></li>
+        <li>Ideal when speed &amp; certainty beat top dollar</li>
+      </ul>
+    </div>
+    <div class="gk-bullet-card">
+      <h4>Cash Backup Plan</h4>
+      <ul>
+        <li>Every listing includes Express Offers as Plan B — no stranded listing</li>
+        <li>Compare cash vs. net proceeds on one sheet before you decide</li>
+      </ul>
+    </div>
+    <div class="gk-bullet-card">
+      <h4>Funded Repairs</h4>
+      <ul>
+        <li>Roof, HVAC, paint, flooring — <strong>$0 out of pocket</strong>, repaid at closing</li>
+        <li>List at peak ARV without heir arguments over who pays</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="gk-section">
+  <h3>📇 Vendors Rolodex — Middle TN (multiple per category)</h3>
+  <p style="font-size:0.82rem;">Vetted partners — updated from your live CRM rolodex. One call dispatches all.</p>
+  <div class="gk-vendors-grid">{vendors_html}</div>
+</div>
+
+<div class="gk-cta">
+  <p style="margin:0 0 0.35rem 0;">You don't have to decide today. When you're ready:</p>
+  <p class="gk-phone">615-953-0758</p>
+  <p style="margin:0.35rem 0 0 0;font-size:0.88rem;">Scott Hardesty · {PARTNER_NAME} · ProbateGuardian TN</p>
+</div>
+<p class="gk-footer">Not legal advice · All sales subject to court approval · © {year} Scott Hardesty, eXp Realty</p>
+</div>
+"""
+
+    if standalone:
+        return (
+            f"<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            f"<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            f"<title>Guardian Kit — {decedent}</title></head><body style=\"margin:0;padding:1rem;"
+            f"background:#0d1117;\">{body}</body></html>"
+        )
+    return body
+
+
+def generate_guardian_kit_html(parsed: dict, vendors: dict) -> str:
+    return build_guardian_kit_html(parsed, vendors, standalone=False)
+
+
 FACILITY_VISIT_CHECKLIST = """═══════════════════════════════════════════════════════════
   PROBATEGUARDIAN — FACILITY VISIT CHECKLIST (print & clip)
   Scott Hardesty 615-953-0758 · Branton Walker field partner
@@ -3489,8 +3950,96 @@ with tab_outreach:
             st.warning("Paste county lead data first.")
         else:
             parsed = parse_lead(raw_lead)
-            st.success("✅ Ultimate Guardian Kit — heavy lifting, Express Offers, funded repairs, subject to court approval.")
-            st.markdown(generate_guardian_kit(parsed, st.session_state.vendors))
+            st.session_state.guardian_kit_parsed = parsed
+            st.session_state.guardian_kit_raw = raw_lead
+
+    if st.session_state.get("guardian_kit_parsed"):
+        gk_parsed = st.session_state.guardian_kit_parsed
+        gk_vendors = st.session_state.vendors
+        st.success(
+            "✅ Premium Guardian Kit ready — dark-green one-pager with roadmap, tiers, "
+            "vendors & one-tap send buttons below."
+        )
+        st.markdown(generate_guardian_kit_html(gk_parsed, gk_vendors), unsafe_allow_html=True)
+
+        family_share = guardian_kit_family_share_text(gk_parsed)
+        sw_text = guardian_kit_social_worker_text(gk_parsed)
+        heir_email = (gk_parsed.get("email") or "").strip()
+        mail_target = heir_email if heir_email else ""
+        mail_subject = urllib.parse.quote(
+            f"Guardian Kit — {gk_parsed.get('decedent', 'Estate')} · ProbateGuardian TN"
+        )
+        mail_body = urllib.parse.quote(family_share)
+        mailto = f"mailto:{mail_target}?subject={mail_subject}&body={mail_body}"
+        sms_body = urllib.parse.quote(sw_text)
+        sms_link = f"sms:?&body={sms_body}"
+        gk_slug = re.sub(r"[^\w\-]+", "_", (gk_parsed.get("decedent") or "estate"))[:40]
+        pdf_html = build_guardian_kit_html(gk_parsed, gk_vendors, standalone=True)
+
+        st.markdown("#### 📲 One-Tap Actions")
+        gk_a1, gk_a2 = st.columns(2)
+        with gk_a1:
+            st.markdown('<div class="gk-action-marker"></div>', unsafe_allow_html=True)
+            st.link_button(
+                "📧 Send to Family",
+                mailto,
+                use_container_width=True,
+                type="primary",
+            )
+        with gk_a2:
+            st.markdown('<div class="gk-action-marker"></div>', unsafe_allow_html=True)
+            st.download_button(
+                label="📥 Download PDF",
+                data=pdf_html,
+                file_name=f"guardian_kit_{gk_slug}_{datetime.now().strftime('%Y%m%d')}.html",
+                mime="text/html",
+                use_container_width=True,
+                help="Open file → Print → Save as PDF on your phone",
+                key="gk_download_pdf",
+            )
+        gk_a3, gk_a4 = st.columns(2)
+        with gk_a3:
+            st.markdown('<div class="gk-action-marker"></div>', unsafe_allow_html=True)
+            st.link_button(
+                "💬 Text to Social Worker",
+                sms_link,
+                use_container_width=True,
+                type="primary",
+            )
+        with gk_a4:
+            st.markdown('<div class="gk-action-marker"></div>', unsafe_allow_html=True)
+            if st.button(
+                f"🔥 Add to {PARTNER_NAME} Queue",
+                use_container_width=True,
+                type="primary",
+                key="gk_add_branton_queue",
+            ):
+                gk_raw = st.session_state.get("guardian_kit_raw", "")
+                gk_push = dict(gk_parsed)
+                gk_push["raw"] = gk_raw
+                heat_status, heat_pipeline = heat_from_import_block(gk_raw)
+                lead_entry = build_lead(
+                    gk_push,
+                    assigned_to_branton=True,
+                    pipeline_stage=heat_pipeline,
+                    status=heat_status,
+                    source="guardian_kit",
+                    score=75,
+                    notes=initial_notes_from_block(
+                        f"🔥 Guardian Kit sent\n{gk_raw}".strip(),
+                        source="Guardian Kit",
+                    ),
+                )
+                st.session_state.leads.insert(0, lead_entry)
+                persist_leads()
+                st.success(
+                    f"🔥 Added to {PARTNER_NAME}'s queue — {gk_parsed.get('decedent')} · "
+                    f"Follow-up: **{lead_entry['follow_up']}**"
+                )
+        st.caption(
+            "Download PDF: open the HTML file in Safari/Chrome → Share → Print → Save as PDF. "
+            "Family email auto-fills if an email was in the lead paste."
+        )
 
     if assign_partner:
         if not raw_lead.strip():
