@@ -442,6 +442,7 @@ a:hover {
   display: grid;
   gap: 1rem;
   max-width: 56rem;
+  align-items: stretch;
 }
 
 .team-card-compact {
