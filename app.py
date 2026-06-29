@@ -446,17 +446,91 @@ st.markdown(
     }
     .income-goal-status-green { color: #3fb950 !important; font-weight: 800; }
     .income-goal-status-red { color: #f85149 !important; font-weight: 800; }
+    .income-goal-status-yellow { color: #f0b429 !important; font-weight: 800; }
+    .income-goal-metrics-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.65rem;
+        margin: 0.75rem 0 0.5rem 0;
+    }
+    @media (min-width: 640px) {
+        .income-goal-metrics-grid { grid-template-columns: repeat(4, 1fr); }
+    }
+    .income-goal-metric-card {
+        background: linear-gradient(160deg, #0d1117 0%, #161b22 100%);
+        border: 2px solid #30363d;
+        border-radius: 12px;
+        padding: 0.75rem 0.65rem 0.65rem 0.65rem;
+        text-align: center;
+    }
+    .income-goal-metric-card.ig-on-pace {
+        border-color: #2ea043;
+        box-shadow: 0 0 18px rgba(46, 160, 67, 0.35);
+    }
+    .income-goal-metric-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        color: #8b949e;
+        margin: 0 0 0.25rem 0;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+    }
+    .income-goal-big-num {
+        font-size: clamp(2rem, 11vw, 2.85rem);
+        font-weight: 900;
+        color: #aff5b4;
+        line-height: 1;
+        margin: 0.15rem 0 0.45rem 0;
+    }
+    .income-goal-bar-track {
+        background: #0d1117;
+        border-radius: 999px;
+        height: 12px;
+        overflow: hidden;
+        border: 1px solid #30363d;
+    }
+    .income-goal-bar-fill {
+        height: 100%;
+        border-radius: 999px;
+        min-width: 4px;
+    }
+    .ig-bar-green { background: linear-gradient(90deg, #1a7f37, #3fb950); }
+    .ig-bar-amber { background: linear-gradient(90deg, #9a6700, #f0b429); }
+    .income-goal-bar-caption {
+        font-size: 0.68rem;
+        color: #6e7681;
+        margin: 0.35rem 0 0 0;
+    }
+    .income-goal-projected {
+        font-size: clamp(1.35rem, 5vw, 1.75rem);
+        font-weight: 900;
+        margin: 0.5rem 0 0.25rem 0;
+        text-align: center;
+    }
+    .income-goal-pace-line {
+        font-size: clamp(1rem, 3.8vw, 1.15rem);
+        font-weight: 800;
+        text-align: center;
+        margin: 0.25rem 0 0.5rem 0;
+    }
     .income-goal-save-marker { display: none; }
     .income-goal-save-marker + div [data-testid="stButton"] > button {
-        min-height: 3.75rem !important;
-        font-size: 1.1rem !important;
+        min-height: 3.85rem !important;
+        font-size: 1.12rem !important;
         font-weight: 800 !important;
         background: linear-gradient(135deg, #1a7f37, #2ea043) !important;
-        box-shadow: 0 6px 24px rgba(46, 160, 67, 0.5) !important;
+        box-shadow: 0 6px 24px rgba(46, 160, 67, 0.55) !important;
+        border: 2px solid #3fb950 !important;
     }
+    .income-goal-calc-marker { display: none; }
     .income-goal-calc-marker + div [data-testid="stButton"] > button {
-        min-height: 3.25rem !important;
+        min-height: 3.85rem !important;
+        font-size: 1.12rem !important;
         font-weight: 800 !important;
+        background: linear-gradient(135deg, #b45309, #f0b429) !important;
+        color: #1a1208 !important;
+        box-shadow: 0 6px 24px rgba(240, 180, 41, 0.45) !important;
+        border: 2px solid #f0b429 !important;
     }
     </style>
     """,
@@ -2314,13 +2388,37 @@ def _income_goal_closes_this_month(leads: list) -> int:
             continue
         closed_month = (lead.get("created") or "")[:7]
         for act in lead.get("activity") or []:
-            text = act.get("text") or ""
+            text = act.get("text") or act.get("detail") or ""
             if "Closed" in text or act.get("stage") == "Closed / Sold":
                 closed_month = (act.get("ts") or "")[:7]
                 break
         if closed_month == ym:
             count += 1
     return count
+
+
+def _income_goal_week_activity(leads: list) -> dict:
+    week_start = _crusher_week_start_iso()
+    dials = kits = appts = 0
+    for lead in leads:
+        created = (lead.get("created") or "")[:10]
+        if created >= week_start:
+            if lead.get("source") in ("guardian_kit",):
+                kits += 1
+            if lead.get("pipeline_stage") == "Appointment Set":
+                appts += 1
+        for act in lead.get("activity") or []:
+            ts = (act.get("ts") or "")[:10]
+            if ts < week_start:
+                continue
+            if act.get("type") == "call":
+                dials += 1
+            detail = (act.get("detail") or act.get("text") or "").lower()
+            if "guardian kit" in detail:
+                kits += 1
+            if "appointment" in detail or "appt set" in detail:
+                appts += 1
+    return {"dials": dials, "kits": kits, "appts": appts}
 
 
 def compute_income_goal_metrics(
@@ -2334,16 +2432,27 @@ def compute_income_goal_metrics(
     income = max(float(target_income or 0), 0)
     dpc = max(float(dials_per_convo or 0.1), 0.1)
     cr = max(float(close_rate or 1), 1) / 100.0
-    income_per_home = income / max(homes, 1)
+    income_per_home = income / homes if homes > 0 else 0.0
 
-    weekly_homes = homes / 4.0
-    weekly_appts = weekly_homes / cr
+    # Funnel math — work backwards from monthly home closes to weekly activity
+    weekly_closes = homes / 4.0
+    weekly_appts = weekly_closes / cr if cr else 0.0
     weekly_kits = weekly_appts / INCOME_GOAL_APPT_PER_KIT
     weekly_convos = weekly_kits / INCOME_GOAL_KIT_PER_CONVO
     weekly_dials = weekly_convos * dpc
 
-    closed_month = _income_goal_closes_this_month(leads or [])
+    # Plan income always equals the target $ he sets (when he hits weekly goals)
+    plan_monthly_income = round(income)
+
+    leads = leads or []
+    closed_month = _income_goal_closes_this_month(leads)
     earned_so_far = closed_month * income_per_home
+    activity = _income_goal_week_activity(leads)
+    actual_dials = activity["dials"]
+    actual_convos = actual_dials / dpc if dpc else float(actual_dials)
+    actual_kits = activity["kits"]
+    actual_appts = activity["appts"]
+
     now = datetime.now()
     if now.month == 12:
         month_end = now.replace(year=now.year + 1, month=1, day=1) - timedelta(days=1)
@@ -2351,20 +2460,49 @@ def compute_income_goal_metrics(
         month_end = now.replace(month=now.month + 1, day=1) - timedelta(days=1)
     days_in_month = month_end.day
     day_of_month = now.day
-    weeks_elapsed = max(day_of_month / 7.0, 0.25)
-    weeks_in_month = days_in_month / 7.0
-    weeks_remaining = max(weeks_in_month - weeks_elapsed, 0)
-    projected_pace = earned_so_far + (weekly_homes * income_per_home * weeks_remaining)
-    plan_income = income_per_home * homes
+    month_progress = day_of_month / days_in_month
+    weeks_remaining = max((days_in_month - day_of_month) / 7.0, 0.0)
+    week_progress = (now.weekday() + 1) / 7.0
 
-    if closed_month >= homes:
+    expected_closes_by_now = homes * month_progress
+    projected_closes = closed_month + weekly_closes * weeks_remaining
+    projected_closes = min(projected_closes, homes) if homes else 0.0
+    projected_raw = projected_closes * income_per_home
+
+    on_pace_month = (
+        homes > 0
+        and (
+            closed_month >= expected_closes_by_now * 0.9
+            or earned_so_far >= income * month_progress * 0.9
+            or projected_raw >= income * 0.92
+        )
+    )
+    if on_pace_month or closed_month >= homes:
+        projected_monthly_income = plan_monthly_income
+        pace_line = f"You're on pace for ${income:,.0f} 🔥"
         status = "green"
-    elif projected_pace >= income * 0.85:
-        status = "green"
-    elif projected_pace >= income * 0.5 or closed_month > 0:
-        status = "yellow"
     else:
-        status = "red"
+        projected_monthly_income = round(min(projected_raw, income))
+        pace_line = (
+            f"You're on pace for ${projected_monthly_income:,.0f} — "
+            f"hit weekly goals for ${income:,.0f} 🔥"
+        )
+        if projected_monthly_income >= income * 0.65:
+            status = "yellow"
+        else:
+            status = "red"
+
+    def _metric_pace(actual: float, target: float) -> tuple:
+        if target <= 0:
+            return 0, True
+        pct = min(100, int((actual / target) * 100))
+        on_pace = actual >= target * week_progress * 0.85
+        return pct, on_pace
+
+    dials_pct, dials_on_pace = _metric_pace(actual_dials, weekly_dials)
+    convos_pct, convos_on_pace = _metric_pace(actual_convos, weekly_convos)
+    kits_pct, kits_on_pace = _metric_pace(actual_kits, weekly_kits)
+    appts_pct, appts_on_pace = _metric_pace(actual_appts, weekly_appts)
 
     return {
         "weekly_dials": round(weekly_dials, 1),
@@ -2372,12 +2510,174 @@ def compute_income_goal_metrics(
         "weekly_kits": round(weekly_kits, 1),
         "weekly_appointments": round(weekly_appts, 1),
         "income_per_home": round(income_per_home),
-        "plan_monthly_income": round(plan_income),
-        "projected_monthly_income": round(projected_pace),
+        "plan_monthly_income": plan_monthly_income,
+        "target_monthly_income": plan_monthly_income,
+        "projected_monthly_income": projected_monthly_income,
         "earned_so_far": round(earned_so_far),
         "closed_this_month": closed_month,
         "status": status,
+        "pace_line": pace_line,
+        "on_pace_month": on_pace_month,
+        "actual_dials": actual_dials,
+        "actual_convos": round(actual_convos, 1),
+        "actual_kits": actual_kits,
+        "actual_appts": actual_appts,
+        "dials_pct": dials_pct,
+        "convos_pct": convos_pct,
+        "kits_pct": kits_pct,
+        "appts_pct": appts_pct,
+        "dials_on_pace": dials_on_pace,
+        "convos_on_pace": convos_on_pace,
+        "kits_on_pace": kits_on_pace,
+        "appts_on_pace": appts_on_pace,
     }
+
+
+def _income_goal_metric_card(
+    label: str,
+    target: float,
+    actual: float,
+    pct: int,
+    on_pace: bool,
+) -> str:
+    fire = "🔥" if on_pace else "📞"
+    bar_cls = "ig-bar-green" if on_pace else "ig-bar-amber"
+    card_cls = "income-goal-metric-card ig-on-pace" if on_pace else "income-goal-metric-card"
+    return (
+        f'<div class="{card_cls}">'
+        f'<p class="income-goal-metric-label">{html.escape(label)} {fire}</p>'
+        f'<p class="income-goal-big-num">{target:.0f}</p>'
+        f'<div class="income-goal-bar-track">'
+        f'<div class="income-goal-bar-fill {bar_cls}" style="width:{pct}%"></div></div>'
+        f'<p class="income-goal-bar-caption">{actual:.0f} this week · goal {target:.0f}</p>'
+        f"</div>"
+    )
+
+
+def render_income_goal_crusher(leads: list) -> None:
+    st.markdown(
+        '<div class="income-goal-card">'
+        '<p class="income-goal-title">🎯 Income Goal Crusher</p>'
+        f'<p style="color:#8b949e;margin:0;font-size:0.88rem;">'
+        f'{PARTNER_NAME} — change targets below · numbers update instantly.</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+    ig_saved = load_income_goal()
+    ig1, ig2 = st.columns(2)
+    with ig1:
+        ig_homes = st.number_input(
+            "Target Homes per Month",
+            min_value=0,
+            max_value=50,
+            value=int(ig_saved.get("target_homes", 2)),
+            step=1,
+            key="income_goal_homes",
+        )
+    with ig2:
+        ig_income = st.number_input(
+            "Target Monthly Income $",
+            min_value=0,
+            max_value=500000,
+            value=int(ig_saved.get("target_income", 20000)),
+            step=500,
+            key="income_goal_income",
+        )
+    ig_sl1, ig_sl2 = st.columns(2)
+    with ig_sl1:
+        ig_dials_ratio = st.slider(
+            "Conversion Ratio (dials per conversation)",
+            min_value=1.0,
+            max_value=8.0,
+            value=float(ig_saved.get("dials_per_convo", 2.8)),
+            step=0.1,
+            key="income_goal_dials_ratio",
+        )
+    with ig_sl2:
+        ig_close_rate = st.slider(
+            "Close Rate (% of appointments → closed home)",
+            min_value=5.0,
+            max_value=80.0,
+            value=float(ig_saved.get("close_rate", 25.0)),
+            step=1.0,
+            key="income_goal_close_rate",
+        )
+
+    igm = compute_income_goal_metrics(
+        ig_homes, ig_income, ig_dials_ratio, ig_close_rate, leads,
+    )
+
+    ig_btn1, ig_btn2 = st.columns(2)
+    with ig_btn1:
+        st.markdown('<div class="income-goal-calc-marker"></div>', unsafe_allow_html=True)
+        ig_calc = st.button(
+            "⚡ Auto-Calculate",
+            use_container_width=True,
+            type="primary",
+            key="income_goal_calculate",
+        )
+    with ig_btn2:
+        st.markdown('<div class="income-goal-save-marker"></div>', unsafe_allow_html=True)
+        ig_save = st.button(
+            "💾 SAVE My Targets",
+            use_container_width=True,
+            type="primary",
+            key="income_goal_save",
+        )
+    if ig_save:
+        save_income_goal({
+            "target_homes": ig_homes,
+            "target_income": ig_income,
+            "dials_per_convo": ig_dials_ratio,
+            "close_rate": ig_close_rate,
+        })
+        st.success("✅ Targets saved permanently.")
+    if ig_calc:
+        st.toast("⚡ Weekly targets recalculated!", icon="🔥")
+
+    metrics_html = (
+        '<div class="income-goal-metrics-grid">'
+        + _income_goal_metric_card(
+            "Weekly Dials", igm["weekly_dials"], igm["actual_dials"],
+            igm["dials_pct"], igm["dials_on_pace"],
+        )
+        + _income_goal_metric_card(
+            "Conversations", igm["weekly_conversations"], igm["actual_convos"],
+            igm["convos_pct"], igm["convos_on_pace"],
+        )
+        + _income_goal_metric_card(
+            "Guardian Kits", igm["weekly_kits"], igm["actual_kits"],
+            igm["kits_pct"], igm["kits_on_pace"],
+        )
+        + _income_goal_metric_card(
+            "Appointments", igm["weekly_appointments"], igm["actual_appts"],
+            igm["appts_pct"], igm["appts_on_pace"],
+        )
+        + "</div>"
+    )
+    st.markdown(metrics_html, unsafe_allow_html=True)
+
+    status_class = {
+        "green": "income-goal-status-green",
+        "yellow": "income-goal-status-yellow",
+        "red": "income-goal-status-red",
+    }.get(igm["status"], "income-goal-status-red")
+    st.markdown(
+        f'<p style="margin:0.35rem 0 0;font-size:0.85rem;color:#8b949e;text-align:center;">'
+        f'Closed: <strong>{igm["closed_this_month"]}</strong> / {ig_homes} homes · '
+        f'Earned: <strong>${igm["earned_so_far"]:,}</strong> · '
+        f'Per home: <strong>${igm["income_per_home"]:,}</strong></p>'
+        f'<p class="income-goal-projected {status_class}">'
+        f'Projected Monthly Income: ${igm["projected_monthly_income"]:,}</p>'
+        f'<p class="income-goal-pace-line {status_class}">{html.escape(igm["pace_line"])}</p>',
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="income-goal-motivate">'
+        f'Hit these numbers = ${ig_income:,.0f} extra in your pocket this month 🔥'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def _count_pipeline_adds_this_week(leads: list) -> int:
@@ -4484,113 +4784,7 @@ with tab_dashboard:
             else:
                 st.caption("Start in Wilson County · use Bulk Qualifier · assign to Branton.")
 
-        st.markdown(
-            '<div class="income-goal-card">'
-            '<p class="income-goal-title">🎯 Income Goal Crusher</p>'
-            f'<p style="color:#8b949e;margin:0;font-size:0.88rem;">'
-            f'{PARTNER_NAME} — set targets, tap Calculate, hit your weekly numbers.</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-        ig_saved = load_income_goal()
-        ig1, ig2 = st.columns(2)
-        with ig1:
-            ig_homes = st.number_input(
-                "Target Homes per Month",
-                min_value=0,
-                max_value=50,
-                value=int(ig_saved.get("target_homes", 2)),
-                step=1,
-                key="income_goal_homes",
-            )
-        with ig2:
-            ig_income = st.number_input(
-                "Target Monthly Income $",
-                min_value=0,
-                max_value=500000,
-                value=int(ig_saved.get("target_income", 20000)),
-                step=500,
-                key="income_goal_income",
-            )
-        ig_sl1, ig_sl2 = st.columns(2)
-        with ig_sl1:
-            ig_dials_ratio = st.slider(
-                "Conversion Ratio (dials per conversation)",
-                min_value=1.0,
-                max_value=8.0,
-                value=float(ig_saved.get("dials_per_convo", 2.8)),
-                step=0.1,
-                key="income_goal_dials_ratio",
-            )
-        with ig_sl2:
-            ig_close_rate = st.slider(
-                "Close Rate (% of appointments → closed home)",
-                min_value=5.0,
-                max_value=80.0,
-                value=float(ig_saved.get("close_rate", 25.0)),
-                step=1.0,
-                key="income_goal_close_rate",
-            )
-        ig_btn1, ig_btn2 = st.columns(2)
-        with ig_btn1:
-            st.markdown('<div class="income-goal-calc-marker"></div>', unsafe_allow_html=True)
-            ig_calc = st.button(
-                "⚡ Auto-Calculate Weekly Targets",
-                use_container_width=True,
-                type="primary",
-                key="income_goal_calculate",
-            )
-        with ig_btn2:
-            st.markdown('<div class="income-goal-save-marker"></div>', unsafe_allow_html=True)
-            ig_save = st.button(
-                "💾 SAVE My Targets",
-                use_container_width=True,
-                type="primary",
-                key="income_goal_save",
-            )
-        if ig_save:
-            save_income_goal({
-                "target_homes": ig_homes,
-                "target_income": ig_income,
-                "dials_per_convo": ig_dials_ratio,
-                "close_rate": ig_close_rate,
-            })
-            st.success("✅ Targets saved permanently — they'll load every time you open the Dashboard.")
-        if ig_calc or st.session_state.get("income_goal_show_results"):
-            if ig_calc:
-                st.session_state.income_goal_show_results = True
-            ig_metrics = compute_income_goal_metrics(
-                ig_homes, ig_income, ig_dials_ratio, ig_close_rate, get_leads(),
-            )
-            st.session_state.income_goal_metrics = ig_metrics
-        if st.session_state.get("income_goal_metrics"):
-            igm = st.session_state.income_goal_metrics
-            wm1, wm2, wm3, wm4 = st.columns(4)
-            wm1.metric("Weekly Dials", f"{igm['weekly_dials']:.0f}")
-            wm2.metric("Weekly Conversations", f"{igm['weekly_conversations']:.0f}")
-            wm3.metric("Guardian Kits / Week", f"{igm['weekly_kits']:.0f}")
-            wm4.metric("Appointments / Week", f"{igm['weekly_appointments']:.0f}")
-            proj = igm["projected_monthly_income"]
-            status = igm["status"]
-            status_class = "income-goal-status-green" if status == "green" else "income-goal-status-red"
-            if status == "yellow":
-                status_class = "income-goal-status-green"
-            st.markdown(
-                f'<p style="margin:0.5rem 0 0.25rem 0;font-size:0.92rem;color:#8b949e;">'
-                f'Closed this month: <strong>{igm["closed_this_month"]}</strong> · '
-                f'Earned so far: <strong>${igm["earned_so_far"]:,}</strong> · '
-                f'Plan if you hit pace: <strong>${igm["plan_monthly_income"]:,}</strong></p>'
-                f'<p class="{status_class}" style="font-size:1.15rem;margin:0.15rem 0;">'
-                f'Projected Monthly Income: ${proj:,}</p>',
-                unsafe_allow_html=True,
-            )
-            motivate = f"${ig_income:,.0f}"
-            st.markdown(
-                f'<div class="income-goal-motivate">'
-                f'Hit these numbers = {motivate} extra in your pocket this month 🔥'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+        render_income_goal_crusher(get_leads())
 
         st.markdown("---")
         st.markdown('<div class="export-notes-marker"></div>', unsafe_allow_html=True)
