@@ -1108,6 +1108,243 @@ a:hover {
   }
 }
 
+/* ── Core 30 — inner pages, service & county cards ───────────────────────── */
+.page-hero {
+  padding: 2.25rem 0 2rem;
+  background: linear-gradient(165deg, var(--cream) 0%, var(--warm-white) 55%, #eef5f0 100%);
+  border-bottom: 1px solid var(--border);
+}
+
+.page-hero h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.55rem, 5vw, 2.35rem);
+  font-weight: 600;
+  color: var(--green-900);
+  margin-bottom: 0.65rem;
+  line-height: 1.2;
+}
+
+.page-hero-lead {
+  color: var(--text-muted);
+  font-size: 1.05rem;
+  max-width: 42rem;
+  margin-bottom: 1rem;
+}
+
+.core-card-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.85rem;
+  margin-bottom: 2rem;
+}
+
+.core-card {
+  display: block;
+  background: var(--warm-white);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.1rem 1.15rem;
+  text-decoration: none;
+  color: var(--text);
+  transition: border-color 0.2s, box-shadow 0.2s, transform 0.15s;
+  box-shadow: 0 4px 14px rgba(15, 41, 34, 0.06);
+}
+
+.core-card:hover {
+  border-color: var(--green-500);
+  box-shadow: var(--shadow);
+  transform: translateY(-2px);
+  color: var(--text);
+}
+
+.core-card-icon {
+  font-size: 1.5rem;
+  display: block;
+  margin-bottom: 0.35rem;
+}
+
+.core-card h2,
+.core-card h3 {
+  font-family: var(--font-serif);
+  font-size: 1.08rem;
+  color: var(--green-800);
+  margin-bottom: 0.35rem;
+  line-height: 1.3;
+}
+
+.core-card p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.core-card-arrow {
+  display: inline-block;
+  margin-top: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--green-600);
+}
+
+.service-detail,
+.county-detail {
+  scroll-margin-top: 5.5rem;
+  padding: 2rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.service-detail:last-child,
+.county-detail:last-child {
+  border-bottom: none;
+}
+
+.service-detail h2,
+.county-detail h2 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 4vw, 1.75rem);
+  color: var(--green-900);
+  margin-bottom: 0.5rem;
+}
+
+.service-detail-lead,
+.county-detail-lead {
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  max-width: 40rem;
+}
+
+.service-detail ul,
+.county-detail ul {
+  margin: 0.75rem 0 1.25rem 1.25rem;
+  color: var(--text);
+}
+
+.service-detail li,
+.county-detail li {
+  margin-bottom: 0.35rem;
+}
+
+.detail-cta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  margin-top: 1.25rem;
+}
+
+.cta-phone-strip {
+  background: linear-gradient(135deg, var(--green-800), var(--green-600));
+  color: #fff;
+  border-radius: var(--radius);
+  padding: 1.35rem 1.25rem;
+  text-align: center;
+  margin: 2rem 0;
+  box-shadow: var(--shadow-lg);
+}
+
+.cta-phone-strip p {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-bottom: 0.85rem;
+  line-height: 1.45;
+}
+
+.cta-phone-strip a {
+  color: #fff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.cta-phone-strip a:hover {
+  color: var(--green-100);
+}
+
+.cta-phone-strip .btn-light {
+  margin-top: 0.25rem;
+}
+
+.internal-links {
+  font-size: 0.92rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px dashed var(--border);
+}
+
+.internal-links a {
+  font-weight: 600;
+}
+
+.county-detail .county-cities {
+  font-weight: 600;
+  color: var(--green-700);
+  margin-bottom: 0.5rem;
+}
+
+.core-hub-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.core-hub-links .btn {
+  font-size: 0.88rem;
+  padding: 0.65rem 1rem;
+  min-height: 44px;
+}
+
+.section-hub {
+  background: linear-gradient(180deg, #eef5f0 0%, var(--warm-white) 100%);
+}
+
+@media (min-width: 600px) {
+  .core-card-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .detail-cta-row {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+}
+
+@media (min-width: 900px) {
+  .core-card-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .header-nav {
+    gap: 0.25rem 0.65rem;
+  }
+
+  .header-nav a {
+    font-size: 0.82rem;
+    padding: 0.3rem 0.4rem;
+  }
+}
+
+@media (max-width: 520px) {
+  .header-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-nav {
+    order: 3;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    width: 100%;
+  }
+
+  .header-phone {
+    align-items: center;
+    text-align: center;
+    width: 100%;
+  }
+}
+
 @media print {
   .site-header,
   .mobile-call-fab,
