@@ -22,9 +22,8 @@ st.cache_resource.clear = lambda: None
 PARTNER_NAME = "Branton Walker"
 DEDICATED_PHONE = "(615) 669-7075"
 DEDICATED_PHONE_TEL = "6156697075"
-DEDICATED_PHONE_LINE = (
-    f"Call or text our dedicated line {DEDICATED_PHONE} — answered by {PARTNER_NAME}"
-)
+DEDICATED_PHONE_LINE = f"Call or text {DEDICATED_PHONE}"
+DEDICATED_PHONE_HTML = f'Call or text <strong>{DEDICATED_PHONE}</strong>'
 ASSIGN_STATUS = f"Assigned to {PARTNER_NAME}"
 LEGACY_ASSIGN_STATUSES = ("Assigned to Brantley", ASSIGN_STATUS)
 PIPELINE_STAGES = ["New/Hot", "Warm", "Appt", "Contract", "Closed"]
@@ -3348,7 +3347,7 @@ POST-CALL CHECKLIST ({PARTNER_NAME})
 CONTACT CARD
 ─────────────────────────────────────────────
 Scott Hardesty | eXp Realty | Mount Juliet, TN
-📞 (615) 669-7075 — answered by Branton
+📞 {DEDICATED_PHONE_LINE}
 ProbateGuardian Free TN — Compassion. Clarity. Closings.
 ═══════════════════════════════════════════════════════"""
 
@@ -3381,7 +3380,7 @@ I coordinate ancillary services (estate sale, cleanout, repairs) only with your 
 
 Respectfully,
 Scott Hardesty · eXp Realty · Mount Juliet, TN
-📞 (615) 669-7075 — answered by Branton
+📞 {DEDICATED_PHONE_LINE}
 {today}"""
 
     if template_type == "thank_you_video":
@@ -3406,7 +3405,7 @@ Current estate I'm happy to discuss as a reference: **{decedent}** · {address}
 
 Grateful for the partnership,
 Scott Hardesty · eXp Realty
-📞 (615) 669-7075 — answered by Branton · Mount Juliet, TN"""
+📞 {DEDICATED_PHONE_LINE} · Mount Juliet, TN"""
 
     if template_type == "pie_campaign":
         return f"""Subject: Thinking of You — {firm} · {today}
@@ -3428,7 +3427,7 @@ Can I drop by Thursday or Friday?
 
 With respect,
 Scott Hardesty · eXp Realty · Mount Juliet, TN
-📞 (615) 669-7075 — answered by Branton"""
+📞 {DEDICATED_PHONE_LINE}"""
 
     if template_type == "review_request":
         return f"""Subject: Quick Favor — 2-Minute Review? · Scott Hardesty / eXp Realty
@@ -3449,7 +3448,7 @@ If there is anything I could have done better on this file, please tell me direc
 Thank you again for the partnership, {attorney}.
 
 Scott Hardesty · eXp Realty · Mount Juliet, TN
-📞 (615) 669-7075 — answered by Branton · {today}"""
+📞 {DEDICATED_PHONE_LINE} · {today}"""
 
     return ""
 
@@ -3477,7 +3476,7 @@ def generate_guardian_kit(parsed: dict, vendors: dict) -> str:
 |---|---|
 | **Prepared by** | Scott Hardesty, eXp Realty |
 | **Office** | Mount Juliet, Tennessee |
-| **Dedicated line** | **{DEDICATED_PHONE}** |
+| **Phone** | **{DEDICATED_PHONE_LINE}** |
 | **Date** | {today} |
 | **Confidential** | For estate heirs and authorized representatives only |
 
@@ -4010,7 +4009,7 @@ def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = F
   <div class="gk-hero-badge">ProbateGuardian Guardian Kit</div>
   <h1>One Call. Everything Handled.<br>We Remove the House Burden So You Can Focus on Family.</h1>
   <p class="gk-hero-sub">Compassion · Clarity · Court-aware coordination · Middle Tennessee</p>
-  <p class="gk-phone" style="margin-top:0.75rem;font-size:1rem;">{DEDICATED_PHONE_LINE}</p>
+  <p class="gk-phone" style="margin-top:0.75rem;font-size:1rem;">{DEDICATED_PHONE_HTML}</p>
 </div>
 
 <div class="gk-meta">
@@ -4018,7 +4017,7 @@ def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = F
   <p><strong>Estate of {decedent}</strong></p>
   <p>{address} · {county}</p>
   <p>ProbateGuardian TN · Mount Juliet, Tennessee</p>
-  <p class="gk-phone">{DEDICATED_PHONE_LINE}</p>
+  <p class="gk-phone">{DEDICATED_PHONE_HTML}</p>
   <p style="font-size:0.8rem;color:#5a6b5f;">{today} · Confidential — heirs &amp; authorized reps only</p>
 </div>
 
@@ -4070,7 +4069,7 @@ def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = F
 <div class="gk-warn">
   <h3>⚠️ Insurance + Signage — Protect the Estate Now</h3>
   <p><strong>Vacant home insurance</strong> is required once the property is unoccupied. Standard homeowner policies may void after 30–60 days. We connect you with Middle TN vacant-home specialists — <strong>we coordinate so you don't have to chase carriers.</strong></p>
-  <div class="gk-signage">ESTATE PROPERTY — NO TRESPASSING<br>Authorized Access Only · {DEDICATED_PHONE}</div>
+  <div class="gk-signage">ESTATE PROPERTY — NO TRESPASSING<br>Authorized Access Only · {DEDICATED_PHONE_LINE}</div>
   <p style="font-size:0.82rem;">Posted at front entry &amp; rear access · photographed for estate file · deters squatters &amp; copper theft</p>
 </div>
 
@@ -4110,8 +4109,7 @@ def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = F
 
 <div class="gk-cta">
   <p style="margin:0 0 0.35rem 0;">You don't have to decide today. When you're ready:</p>
-  <p class="gk-phone">{DEDICATED_PHONE}</p>
-  <p style="margin:0.35rem 0 0 0;font-size:0.88rem;">{DEDICATED_PHONE_LINE}</p>
+  <p class="gk-phone">{DEDICATED_PHONE_HTML}</p>
 </div>
 <p class="gk-footer">Not legal advice · All sales subject to court approval · © {year} Scott Hardesty, eXp Realty</p>
 </div>
@@ -4242,8 +4240,7 @@ def generate_referral_one_pager(
 
 | | |
 |---|---|
-| **Dedicated line** | **{DEDICATED_PHONE}** |
-| **Answered by** | **{PARTNER_NAME}** |
+| **Phone** | **{DEDICATED_PHONE_LINE}** |
 | **Web** | probateguardians.com |
 
 *{DEDICATED_PHONE_LINE}*
@@ -4327,7 +4324,7 @@ with st.sidebar:
     st.markdown("### Scott Hardesty")
     st.markdown("**eXp Realty** · Mount Juliet, TN")
     st.markdown(
-        f'<div class="phone-banner">📞 {DEDICATED_PHONE_LINE}</div>',
+        f'<div class="phone-banner">📞 {DEDICATED_PHONE_HTML}</div>',
         unsafe_allow_html=True,
     )
     st.markdown("---")
@@ -5461,7 +5458,7 @@ with tab_partner:
         7. Use **Rick Yen price anchoring** — range on call #1, Net Sheet on call #2
         8. Use **Attorney Outreach** templates after every attorney referral
         9. Memorize **Express Offers** + always say **subject to court approval**
-        10. Save our dedicated line: **{DEDICATED_PHONE}** — {DEDICATED_PHONE_LINE}
+        10. Save our line: **{DEDICATED_PHONE_LINE}**
 
         > **Golden Rule (Aaron Novello):** You're not calling to sell. You're calling to help a family
         > in pain make a good decision. The deals follow the compassion. Every time.
@@ -5577,7 +5574,7 @@ Quick prep that helps me serve you better:
 • Any known mortgage, liens, or estate debts?
 • Is your probate attorney already involved?
 
-If anything changes, just text or call our dedicated line (615) 669-7075. Looking forward to helping your family get clarity.""",
+If anything changes, just call or text (615) 669-7075. Looking forward to helping your family get clarity.""",
             ),
             (
                 "Stage 4 — Post-Appointment / Net Sheet Delivery",
@@ -5608,7 +5605,7 @@ Quick status for your file:
 
 You focus on family — we handle the heavy lifting. Anything worrying you that I should address today?
 
-I'll keep you updated at every milestone. Dedicated line (615) 669-7075 — answered by Branton.""",
+I'll keep you updated at every milestone. Call or text (615) 669-7075.""",
             ),
         ],
     ),
@@ -5689,7 +5686,7 @@ Tell me more about that. How many heirs? Does anyone want to buy out the others?
 
 I can run buyout math and present neutral Net Sheet options so everyone works from the same facts — not emotions. Sometimes one short call with all parties saves months of conflict.
 
-Would a neutral third-party walkthrough help — or should I call our dedicated line (615) 669-7075?""",
+Would a neutral third-party walkthrough help — or should I call or text (615) 669-7075?""",
             ),
         ],
     ),
@@ -5763,7 +5760,7 @@ Inside you'll find:
 ✓ Your personalized vendor rolodex (attorney, estate sale, cleanout, cash buyers)
 ✓ Property path options — list, Express Offers, Muniment, buyout
 ✓ What to expect timeline — subject to court approval
-✓ Dedicated line: (615) 669-7075
+✓ Call or text (615) 669-7075
 
 No obligation — built so your family has one clear resource. Questions? Just reply here.""",
             ),
@@ -5782,14 +5779,14 @@ Equity Snapshot Request — Estate of [Decedent]""",
 
 I'm reaching out very respectfully about [Decedent]'s property at [Address]. No agenda, no pressure — I simply help probate families with property questions, Net Sheets, and vendor coordination.
 
-I'll try you once more, or feel free to call our dedicated line (615) 669-7075. Again, I'm sorry for your loss.""",
+I'll try you once more, or feel free to call or text (615) 669-7075. Again, I'm sorry for your loss.""",
             ),
             (
                 "Voicemail — follow-up after speaking",
                 "Rick Yen",
                 """Hi [Heir Name], [Your Name] again — we spoke briefly about [Address]. Just following up on the free Equity Snapshot I mentioned.
 
-Happy to keep this simple — 10 minutes, your questions answered, no obligation. Call our dedicated line (615) 669-7075 when it's convenient. Thanks, [Heir Name].""",
+Happy to keep this simple — 10 minutes, your questions answered, no obligation. Call or text (615) 669-7075 when it's convenient. Thanks, [Heir Name].""",
             ),
             (
                 "Guardian Kit intro — live on call",
@@ -5848,7 +5845,7 @@ Thank you for handling the legal side for the [Decedent] estate. [Heir Name] ask
 
 I will not market or show the property until you confirm authority to sell. Attached/linked: proposed listing timeline, Net Sheet, and vendor list for your file.
 
-Please let me know if you need anything from me. Dedicated line (615) 669-7075 — answered by Branton""",
+Please let me know if you need anything from me. Call or text (615) 669-7075.""",
             ),
             (
                 "Long-term check-in — 6+ months",
@@ -5931,7 +5928,7 @@ Perfect when heirs live out of state, the property needs work, or the family wan
                 "Scott Hardesty team",
                 """For anything complex — sibling disputes, buyout math, competing agents, $500K+ estates, or attorney conflicts — Scott Hardesty jumps in directly.
 
-Dedicated line (615) 669-7075 — answered by Branton
+Call or text (615) 669-7075
 
 You never have to figure out the hard stuff alone.""",
             ),
@@ -6023,7 +6020,7 @@ with tab_training:
 
         **Guardian Kit highlights:** Project Coordinator · Heavy lifting table · Express Offers · funded repairs
 
-        **Escalate complex deals — {DEDICATED_PHONE}:** Sibling disputes · buyout math · competing agent · $500K+
+        **Escalate complex deals — {DEDICATED_PHONE_LINE}:** Sibling disputes · buyout math · competing agent · $500K+
         """
     )
 
@@ -6034,7 +6031,7 @@ with tab_training:
         - [eXp Express Offers](https://www.exprealty.com) — Multi-buyer cash submissions
         - [TN Muniment of Title — T.C.A. 32](https://www.tn.gov/content/tn/tcas/search.html) — No-debt transfer path
         - **Lead Workflow** — Full Outreach · Guardian Kit · Attorney Outreach templates
-        - **{DEDICATED_PHONE}** — {DEDICATED_PHONE_LINE}
+        - **{DEDICATED_PHONE_LINE}**
         """
     )
 
