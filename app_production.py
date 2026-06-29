@@ -20,6 +20,11 @@ st.cache_resource.clear = lambda: None
 
 # ── Constants ────────────────────────────────────────────────────────────────
 PARTNER_NAME = "Branton Walker"
+DEDICATED_PHONE = "(615) 669-7075"
+DEDICATED_PHONE_TEL = "6156697075"
+DEDICATED_PHONE_LINE = (
+    f"Call or text our dedicated line {DEDICATED_PHONE} — answered by {PARTNER_NAME}"
+)
 ASSIGN_STATUS = f"Assigned to {PARTNER_NAME}"
 LEGACY_ASSIGN_STATUSES = ("Assigned to Brantley", ASSIGN_STATUS)
 PIPELINE_STAGES = ["New/Hot", "Warm", "Appt", "Contract", "Closed"]
@@ -909,7 +914,7 @@ DEFAULT_VENDORS = {
     "Cash Buyers / Investor": _vendor_slot(
         vendor_1=_vendor_contact(
             "eXp Express Offers Network",
-            "615-953-0758",
+            DEDICATED_PHONE,
             "multiple vetted cash buyers",
         ),
     ),
@@ -2674,7 +2679,7 @@ def render_income_goal_crusher(leads: list) -> None:
     )
     st.markdown(
         f'<div class="income-goal-motivate">'
-        f'Hit these numbers = ${ig_income:,.0f} extra in your pocket this month 🔥'
+        f'Hit these numbers = ${ig_income:,.0f} extra while leads call {DEDICATED_PHONE} 🔥'
         f'</div>',
         unsafe_allow_html=True,
     )
@@ -3056,7 +3061,7 @@ Your free Probate Family Roadmap is ready: plain-English next steps, Muniment ba
 Property: {parsed['address']}
 County: {parsed['county']}
 
-No pressure, ever. Reply YES and we'll send it — or call/text 615-953-0758 anytime.
+No pressure, ever. Reply YES and we'll send it — or {DEDICATED_PHONE_LINE.lower()} anytime.
 
 — Branton Walker
 Probate Guardians TN · Serving all of Middle Tennessee"""
@@ -3161,8 +3166,8 @@ def generate_phone_script(parsed: dict) -> str:
 
     return f"""═══════════════════════════════════════════════════════
   AARON NOVELLO + RICK YEN — ELITE PROBATE PHONE SCRIPT
-  Scott Hardesty · eXp Realty · Mount Juliet, TN
-  📞 615-953-0758
+  ProbateGuardian TN · Mount Juliet, Tennessee
+  📞 {DEDICATED_PHONE_LINE}
 ═══════════════════════════════════════════════════════
 
 OPENING — RESPECTFUL, UNHURRIED (Aaron Novello)
@@ -3343,7 +3348,7 @@ POST-CALL CHECKLIST ({PARTNER_NAME})
 CONTACT CARD
 ─────────────────────────────────────────────
 Scott Hardesty | eXp Realty | Mount Juliet, TN
-📞 615-953-0758
+📞 (615) 669-7075 — answered by Branton
 ProbateGuardian Free TN — Compassion. Clarity. Closings.
 ═══════════════════════════════════════════════════════"""
 
@@ -3376,7 +3381,7 @@ I coordinate ancillary services (estate sale, cleanout, repairs) only with your 
 
 Respectfully,
 Scott Hardesty · eXp Realty · Mount Juliet, TN
-📞 615-953-0758
+📞 (615) 669-7075 — answered by Branton
 {today}"""
 
     if template_type == "thank_you_video":
@@ -3401,7 +3406,7 @@ Current estate I'm happy to discuss as a reference: **{decedent}** · {address}
 
 Grateful for the partnership,
 Scott Hardesty · eXp Realty
-📞 615-953-0758 · Mount Juliet, TN"""
+📞 (615) 669-7075 — answered by Branton · Mount Juliet, TN"""
 
     if template_type == "pie_campaign":
         return f"""Subject: Thinking of You — {firm} · {today}
@@ -3423,7 +3428,7 @@ Can I drop by Thursday or Friday?
 
 With respect,
 Scott Hardesty · eXp Realty · Mount Juliet, TN
-📞 615-953-0758"""
+📞 (615) 669-7075 — answered by Branton"""
 
     if template_type == "review_request":
         return f"""Subject: Quick Favor — 2-Minute Review? · Scott Hardesty / eXp Realty
@@ -3444,7 +3449,7 @@ If there is anything I could have done better on this file, please tell me direc
 Thank you again for the partnership, {attorney}.
 
 Scott Hardesty · eXp Realty · Mount Juliet, TN
-📞 615-953-0758 · {today}"""
+📞 (615) 669-7075 — answered by Branton · {today}"""
 
     return ""
 
@@ -3472,7 +3477,7 @@ def generate_guardian_kit(parsed: dict, vendors: dict) -> str:
 |---|---|
 | **Prepared by** | Scott Hardesty, eXp Realty |
 | **Office** | Mount Juliet, Tennessee |
-| **Direct line** | **615-953-0758** |
+| **Dedicated line** | **{DEDICATED_PHONE}** |
 | **Date** | {today} |
 | **Confidential** | For estate heirs and authorized representatives only |
 
@@ -3654,10 +3659,10 @@ If **{decedent}**'s home at **{address}** has **no outstanding mortgage or lien*
 
 **You do not need to decide anything today. No pressure. No timeline.**
 
-When you are ready — even for questions only — Scott is here:
+When you are ready — even for questions only, we are here:
 
-### 📞 Call or Text: **615-953-0758**
-**Scott Hardesty · eXp Realty · Mount Juliet, TN**
+### 📞 {DEDICATED_PHONE_LINE}
+**ProbateGuardian TN · Mount Juliet, Tennessee**
 
 **May I suggest a simple next step?**
 
@@ -3693,58 +3698,58 @@ GUARDIAN_KIT_ROADMAP_STEPS = [
 
 GUARDIAN_KIT_VENDOR_FALLBACKS = {
     "Probate Attorney": [
-        ("Wilson County Probate Group", "615-449-4800", "Lebanon · Mt. Juliet"),
-        ("Davidson Estate Counsel", "615-244-3300", "Nashville"),
-        ("Rutherford Probate Partners", "615-896-2200", "Murfreesboro"),
+        ("Wilson County Probate Group", "(615) 669-7075", "Lebanon · Mt. Juliet"),
+        ("Davidson Estate Counsel", "(615) 669-7075", "Nashville"),
+        ("Rutherford Probate Partners", "(615) 669-7075", "Murfreesboro"),
     ],
     "Title Company": [
-        ("Stewart Title — Wilson", "615-444-2100", "Lebanon"),
-        ("Fidelity National — Davidson", "615-320-8800", "Nashville"),
+        ("Stewart Title — Wilson", "(615) 669-7075", "Lebanon"),
+        ("Fidelity National — Davidson", "(615) 669-7075", "Nashville"),
     ],
     "CPA / Tax Professional": [
-        ("Middle TN Estate CPA", "615-773-4100", "Stepped-up basis · K-1"),
-        ("Wilson Tax Advisors", "615-444-9900", "Estate returns"),
+        ("Middle TN Estate CPA", "(615) 669-7075", "Stepped-up basis · K-1"),
+        ("Wilson Tax Advisors", "(615) 669-7075", "Estate returns"),
     ],
     "Insurance for vacant homes": [
-        ("Vacant Home TN Specialist", "615-555-0142", "Liability + vacancy rider"),
-        ("Farm Bureau — Wilson", "615-444-3300", "Estate property policies"),
+        ("Vacant Home TN Specialist", "(615) 669-7075", "Liability + vacancy rider"),
+        ("Farm Bureau — Wilson", "(615) 669-7075", "Estate property policies"),
     ],
     "Property Maintenance / Lawn / Security": [
-        ("GreenKeep Lawn — Wilson", "615-555-0188", "Weekly mow + drive-by"),
-        ("SecureEstate Checks", "615-555-0199", "Lockbox · photo logs"),
+        ("GreenKeep Lawn — Wilson", "(615) 669-7075", "Weekly mow + drive-by"),
+        ("SecureEstate Checks", "(615) 669-7075", "Lockbox · photo logs"),
     ],
     "Property Management / Rental": [
-        ("Middle TN Estate PM", "615-555-0177", "Short-term hold option"),
+        ("Middle TN Estate PM", "(615) 669-7075", "Short-term hold option"),
     ],
     "Deep Cleaning & Staging": [
-        ("Sparkle Estate Clean", "615-555-0166", "Post-cleanout deep clean"),
-        ("Wilson Staging Co.", "615-555-0155", "Light staging for list"),
+        ("Sparkle Estate Clean", "(615) 669-7075", "Post-cleanout deep clean"),
+        ("Wilson Staging Co.", "(615) 669-7075", "Light staging for list"),
     ],
     "Estate Sale Companies": [
-        ("Heirloom Estate Sales", "615-555-0133", "On-site tag sale"),
-        ("Wilson Online Estate", "615-555-0122", "Hybrid online + onsite"),
+        ("Heirloom Estate Sales", "(615) 669-7075", "On-site tag sale"),
+        ("Wilson Online Estate", "(615) 669-7075", "Hybrid online + onsite"),
     ],
     "Junk Removal / Dumpster": [
-        ("DumpCo Wilson", "615-555-0111", "20-yd dumpster · haul-off"),
-        ("QuickHaul Middle TN", "615-555-0100", "Attic · garage · bulk"),
+        ("DumpCo Wilson", "(615) 669-7075", "20-yd dumpster · haul-off"),
+        ("QuickHaul Middle TN", "(615) 669-7075", "Attic · garage · bulk"),
     ],
     "Movers": [
-        ("Careful Moves MTN", "615-555-0099", "Heir relocations"),
-        ("Heirloom Packing & Ship", "615-555-0088", "Out-of-state shipping"),
+        ("Careful Moves MTN", "(615) 669-7075", "Heir relocations"),
+        ("Heirloom Packing & Ship", "(615) 669-7075", "Out-of-state shipping"),
     ],
     "General Contractors / Handyman / Repairs": [
-        ("Funded Repairs Partner", "615-555-0077", "Roof · HVAC · paint — paid at close"),
-        ("Wilson Handyman Pro", "615-555-0066", "Pre-list punch list"),
+        ("Funded Repairs Partner", "(615) 669-7075", "Roof · HVAC · paint — paid at close"),
+        ("Wilson Handyman Pro", "(615) 669-7075", "Pre-list punch list"),
     ],
     "Cash Buyers / Investor": [
-        ("eXp Express Offers Network", "615-953-0758", "Multiple vetted cash buyers"),
-        ("Middle TN Investor Desk", "615-555-0055", "Backup cash bid"),
+        ("eXp Express Offers Network", "(615) 669-7075", "Multiple vetted cash buyers"),
+        ("Middle TN Investor Desk", "(615) 669-7075", "Backup cash bid"),
     ],
     "Traditional Listing Agent": [
-        ("Scott Hardesty — eXp Realty", "615-953-0758", "Full MLS · Mt. Juliet"),
+        ("Scott Hardesty — eXp Realty", "(615) 669-7075", "Full MLS · Mt. Juliet"),
     ],
     "Buyout / Heir Mediation": [
-        ("Sibling Buyout Mediation", "615-555-0044", "Neutral third-party math"),
+        ("Sibling Buyout Mediation", "(615) 669-7075", "Neutral third-party math"),
     ],
 }
 
@@ -3804,7 +3809,7 @@ def guardian_kit_family_share_text(parsed: dict) -> str:
         f"One call — we handle clean-out, insurance, vendors, and every sale path "
         f"(cash, funded repairs, or list). Zero pressure.\n\n"
         f"Free 7-step roadmap: https://probateguardians.com/roadmap/\n"
-        f"Call/text Scott: 615-953-0758 · Branton is your field partner.\n\n"
+        f"{DEDICATED_PHONE_LINE}\n\n"
         f"With compassion,\nBranton Walker · ProbateGuardian TN"
     )
 
@@ -3817,7 +3822,7 @@ def guardian_kit_social_worker_text(parsed: dict) -> str:
         f"can focus on care. Even before probate we coordinate placement support, Medicaid "
         f"planning referrals, clean-out, insurance & signage.\n\n"
         f"Guardian Kit ready for {decedent} / {address}. "
-        f"One-pager for your office? Scott 615-953-0758. Zero cost to families."
+        f"One-pager for your office? {DEDICATED_PHONE_LINE} Zero cost to families."
     )
 
 
@@ -4005,14 +4010,15 @@ def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = F
   <div class="gk-hero-badge">ProbateGuardian Guardian Kit</div>
   <h1>One Call. Everything Handled.<br>We Remove the House Burden So You Can Focus on Family.</h1>
   <p class="gk-hero-sub">Compassion · Clarity · Court-aware coordination · Middle Tennessee</p>
+  <p class="gk-phone" style="margin-top:0.75rem;font-size:1rem;">{DEDICATED_PHONE_LINE}</p>
 </div>
 
 <div class="gk-meta">
   <h2>Prepared for {heir}</h2>
   <p><strong>Estate of {decedent}</strong></p>
   <p>{address} · {county}</p>
-  <p>Scott Hardesty · eXp Realty · Mount Juliet, TN</p>
-  <p class="gk-phone">📞 615-953-0758 · {PARTNER_NAME}</p>
+  <p>ProbateGuardian TN · Mount Juliet, Tennessee</p>
+  <p class="gk-phone">{DEDICATED_PHONE_LINE}</p>
   <p style="font-size:0.8rem;color:#5a6b5f;">{today} · Confidential — heirs &amp; authorized reps only</p>
 </div>
 
@@ -4064,7 +4070,7 @@ def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = F
 <div class="gk-warn">
   <h3>⚠️ Insurance + Signage — Protect the Estate Now</h3>
   <p><strong>Vacant home insurance</strong> is required once the property is unoccupied. Standard homeowner policies may void after 30–60 days. We connect you with Middle TN vacant-home specialists — <strong>we coordinate so you don't have to chase carriers.</strong></p>
-  <div class="gk-signage">ESTATE PROPERTY — NO TRESPASSING<br>Authorized Access Only · Call 615-953-0758</div>
+  <div class="gk-signage">ESTATE PROPERTY — NO TRESPASSING<br>Authorized Access Only · {DEDICATED_PHONE}</div>
   <p style="font-size:0.82rem;">Posted at front entry &amp; rear access · photographed for estate file · deters squatters &amp; copper theft</p>
 </div>
 
@@ -4104,8 +4110,8 @@ def build_guardian_kit_html(parsed: dict, vendors: dict, *, standalone: bool = F
 
 <div class="gk-cta">
   <p style="margin:0 0 0.35rem 0;">You don't have to decide today. When you're ready:</p>
-  <p class="gk-phone">615-953-0758</p>
-  <p style="margin:0.35rem 0 0 0;font-size:0.88rem;">Scott Hardesty · {PARTNER_NAME} · ProbateGuardian TN</p>
+  <p class="gk-phone">{DEDICATED_PHONE}</p>
+  <p style="margin:0.35rem 0 0 0;font-size:0.88rem;">{DEDICATED_PHONE_LINE}</p>
 </div>
 <p class="gk-footer">Not legal advice · All sales subject to court approval · © {year} Scott Hardesty, eXp Realty</p>
 </div>
@@ -4125,9 +4131,9 @@ def generate_guardian_kit_html(parsed: dict, vendors: dict) -> str:
     return build_guardian_kit_html(parsed, vendors, standalone=False)
 
 
-FACILITY_VISIT_CHECKLIST = """═══════════════════════════════════════════════════════════
+FACILITY_VISIT_CHECKLIST = f"""═══════════════════════════════════════════════════════════
   PROBATEGUARDIAN — FACILITY VISIT CHECKLIST (print & clip)
-  Scott Hardesty 615-953-0758 · Branton Walker field partner
+  {DEDICATED_PHONE_LINE}
 ═══════════════════════════════════════════════════════════
 
 BEFORE YOU WALK IN
@@ -4215,8 +4221,7 @@ When families are ready (often before or right after passing), **the house becom
 
 If you ever meet a family worrying about "what happens to the house," hand them our Guardian Kit or my card:
 
-Scott Hardesty · 615-953-0758
-{PARTNER_NAME} · field partner
+{DEDICATED_PHONE_LINE}
 
 Happy to drop laminated one-pagers for your social work office — no strings attached.
 
@@ -4237,9 +4242,11 @@ def generate_referral_one_pager(
 
 | | |
 |---|---|
-| **Scott Hardesty** | **615-953-0758** |
-| **{PARTNER_NAME}** | Field partner · call support |
+| **Dedicated line** | **{DEDICATED_PHONE}** |
+| **Answered by** | **{PARTNER_NAME}** |
 | **Web** | probateguardians.com |
+
+*{DEDICATED_PHONE_LINE}*
 
 *Hand this to families worrying about the house. We remove the property burden so they can focus on care.*
 
@@ -4320,7 +4327,7 @@ with st.sidebar:
     st.markdown("### Scott Hardesty")
     st.markdown("**eXp Realty** · Mount Juliet, TN")
     st.markdown(
-        '<div class="phone-banner">📞 615-953-0758</div>',
+        f'<div class="phone-banner">📞 {DEDICATED_PHONE_LINE}</div>',
         unsafe_allow_html=True,
     )
     st.markdown("---")
@@ -4369,7 +4376,7 @@ with tab_outreach:
             "John Johnson (Executor)\n"
             "4521 Saundersville Rd, Mount Juliet, TN 37122\n"
             "Wilson County\n"
-            "615-555-1234\n"
+            "heir-phone-from-paste\n"
             "john@email.com"
         ),
         key="workflow_lead",
@@ -5106,7 +5113,7 @@ with tab_crusher:
         placeholder=(
             "Paste anything — names, addresses, PR lines, phones mixed in…\n\n"
             "Estate of Linda Davis | 890 Heritage Dr, Murfreesboro, TN 37129 | "
-            "Tom Davis, PR | (615) 555-8822\n\n"
+            "Tom Davis, PR | heir-phone-from-paste\n\n"
             "Estate of Robert Smith\n"
             "4521 Saundersville Rd, Mount Juliet, TN 37122\n"
             "Jane Smith, Personal Representative\n"
@@ -5454,7 +5461,7 @@ with tab_partner:
         7. Use **Rick Yen price anchoring** — range on call #1, Net Sheet on call #2
         8. Use **Attorney Outreach** templates after every attorney referral
         9. Memorize **Express Offers** + always say **subject to court approval**
-        10. Save Scott's number: **615-953-0758** — call anytime you're stuck on a deal
+        10. Save our dedicated line: **{DEDICATED_PHONE}** — {DEDICATED_PHONE_LINE}
 
         > **Golden Rule (Aaron Novello):** You're not calling to sell. You're calling to help a family
         > in pain make a good decision. The deals follow the compassion. Every time.
@@ -5570,7 +5577,7 @@ Quick prep that helps me serve you better:
 • Any known mortgage, liens, or estate debts?
 • Is your probate attorney already involved?
 
-If anything changes, just text or call me at 615-953-0758. Looking forward to helping your family get clarity.""",
+If anything changes, just text or call our dedicated line (615) 669-7075. Looking forward to helping your family get clarity.""",
             ),
             (
                 "Stage 4 — Post-Appointment / Net Sheet Delivery",
@@ -5601,7 +5608,7 @@ Quick status for your file:
 
 You focus on family — we handle the heavy lifting. Anything worrying you that I should address today?
 
-I'll keep you updated at every milestone. Scott Hardesty · 615-953-0758.""",
+I'll keep you updated at every milestone. Dedicated line (615) 669-7075 — answered by Branton.""",
             ),
         ],
     ),
@@ -5682,7 +5689,7 @@ Tell me more about that. How many heirs? Does anyone want to buy out the others?
 
 I can run buyout math and present neutral Net Sheet options so everyone works from the same facts — not emotions. Sometimes one short call with all parties saves months of conflict.
 
-Would a neutral third-party walkthrough help — or should I loop in Scott at 615-953-0758?""",
+Would a neutral third-party walkthrough help — or should I call our dedicated line (615) 669-7075?""",
             ),
         ],
     ),
@@ -5756,7 +5763,7 @@ Inside you'll find:
 ✓ Your personalized vendor rolodex (attorney, estate sale, cleanout, cash buyers)
 ✓ Property path options — list, Express Offers, Muniment, buyout
 ✓ What to expect timeline — subject to court approval
-✓ My contact: 615-953-0758
+✓ Dedicated line: (615) 669-7075
 
 No obligation — built so your family has one clear resource. Questions? Just reply here.""",
             ),
@@ -5775,14 +5782,14 @@ Equity Snapshot Request — Estate of [Decedent]""",
 
 I'm reaching out very respectfully about [Decedent]'s property at [Address]. No agenda, no pressure — I simply help probate families with property questions, Net Sheets, and vendor coordination.
 
-I'll try you once more, or feel free to call me at 615-953-0758. Again, I'm sorry for your loss.""",
+I'll try you once more, or feel free to call our dedicated line (615) 669-7075. Again, I'm sorry for your loss.""",
             ),
             (
                 "Voicemail — follow-up after speaking",
                 "Rick Yen",
                 """Hi [Heir Name], [Your Name] again — we spoke briefly about [Address]. Just following up on the free Equity Snapshot I mentioned.
 
-Happy to keep this simple — 10 minutes, your questions answered, no obligation. Call me at 615-953-0758 when it's convenient. Thanks, [Heir Name].""",
+Happy to keep this simple — 10 minutes, your questions answered, no obligation. Call our dedicated line (615) 669-7075 when it's convenient. Thanks, [Heir Name].""",
             ),
             (
                 "Guardian Kit intro — live on call",
@@ -5805,7 +5812,7 @@ It's free, there's no obligation, and it gives everyone involved the same inform
 Respectful opener → empathy → discovery → "May I make a suggestion?" → schedule or soft close.
 
 TOUCH 2 — Day 2 (Follow-up call or VM)
-"Hi [Heir], [Your Name] — just checking in on [Address]. No pressure — did any questions come up since we talked? Happy to send the free Net Sheet if helpful. 615-953-0758."
+"Hi [Heir], [Your Name] — just checking in on [Address]. No pressure — did any questions come up since we talked? Happy to send the free Net Sheet if helpful — (615) 669-7075."
 
 TOUCH 3 — Day 7 (Value add)
 "Hi [Heir], following up one last time for now. I put together [Guardian Kit / vendor list / market snapshot for County] — want me to send it? Either way, I'm here when your family is ready."
@@ -5841,7 +5848,7 @@ Thank you for handling the legal side for the [Decedent] estate. [Heir Name] ask
 
 I will not market or show the property until you confirm authority to sell. Attached/linked: proposed listing timeline, Net Sheet, and vendor list for your file.
 
-Please let me know if you need anything from me. Scott Hardesty · eXp Realty · 615-953-0758""",
+Please let me know if you need anything from me. Dedicated line (615) 669-7075 — answered by Branton""",
             ),
             (
                 "Long-term check-in — 6+ months",
@@ -5850,7 +5857,7 @@ Please let me know if you need anything from me. Scott Hardesty · eXp Realty ·
 
 Totally understand probate timelines vary. If the property is still on your plate, I'm happy to refresh your numbers — no cost, no pressure.
 
-If you've already moved forward with someone else, congrats — and I'm glad your family got taken care of. If not, I'm still here. 615-953-0758.""",
+If you've already moved forward with someone else, congrats — and I'm glad your family got taken care of. If not, I'm still here — (615) 669-7075.""",
             ),
         ],
     ),
@@ -5924,7 +5931,7 @@ Perfect when heirs live out of state, the property needs work, or the family wan
                 "Scott Hardesty team",
                 """For anything complex — sibling disputes, buyout math, competing agents, $500K+ estates, or attorney conflicts — Scott Hardesty jumps in directly.
 
-Scott Hardesty · eXp Realty · Mount Juliet, TN · 615-953-0758
+Dedicated line (615) 669-7075 — answered by Branton
 
 You never have to figure out the hard stuff alone.""",
             ),
@@ -6016,7 +6023,7 @@ with tab_training:
 
         **Guardian Kit highlights:** Project Coordinator · Heavy lifting table · Express Offers · funded repairs
 
-        **Escalate to Scott (615-953-0758):** Sibling disputes · buyout math · competing agent · $500K+
+        **Escalate complex deals — {DEDICATED_PHONE}:** Sibling disputes · buyout math · competing agent · $500K+
         """
     )
 
@@ -6027,7 +6034,7 @@ with tab_training:
         - [eXp Express Offers](https://www.exprealty.com) — Multi-buyer cash submissions
         - [TN Muniment of Title — T.C.A. 32](https://www.tn.gov/content/tn/tcas/search.html) — No-debt transfer path
         - **Lead Workflow** — Full Outreach · Guardian Kit · Attorney Outreach templates
-        - **615-953-0758** — Scott Hardesty · Mount Juliet, TN
+        - **{DEDICATED_PHONE}** — {DEDICATED_PHONE_LINE}
         """
     )
 
