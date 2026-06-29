@@ -8,6 +8,7 @@ import os
 import re
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -360,6 +361,36 @@ st.markdown(
     .call-mode-paste-marker + div [data-testid="stTextArea"] textarea {
         min-height: 10rem !important;
         border: 2px solid #2ea043 !important;
+    }
+    .hospice-mega-marker { display: none; }
+    .hospice-mega-marker + div [data-testid="stLinkButton"] > a,
+    .hospice-mega-marker + div [data-testid="stButton"] > button {
+        min-height: 4.25rem !important;
+        font-size: 1.05rem !important;
+        font-weight: 800 !important;
+        box-shadow: 0 6px 24px rgba(46, 160, 67, 0.5) !important;
+    }
+    .hospice-mega-marker + div [data-testid="stLinkButton"] > a {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background: linear-gradient(135deg, #1a7f37, #2ea043) !important;
+        border: none !important;
+        color: #fff !important;
+        border-radius: 0.5rem !important;
+        text-decoration: none !important;
+        padding: 0.75rem 1rem !important;
+    }
+    .hospice-hero {
+        font-size: clamp(1rem, 3.6vw, 1.12rem);
+        font-weight: 700;
+        line-height: 1.5;
+        color: #aff5b4;
+        background: linear-gradient(135deg, #0f1f14 0%, #0d1117 100%);
+        border: 2px solid #2ea043;
+        border-radius: 12px;
+        padding: 0.85rem 1rem;
+        margin: 0.5rem 0 1rem 0;
     }
     .call-mode-thumb-start { display: none; }
     .call-mode-thumb-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
@@ -1526,6 +1557,7 @@ def score_lead(parsed: dict) -> tuple:
 # ── 90-Day Probate Crusher — vacant scoring & flexible bulk parse ─────────────
 VACANT_DISTANCE_MILES = 50
 CRUSHER_KPI_FILE = Path(__file__).resolve().parent / "crusher_kpi.json"
+HOSPICE_REFERRALS_FILE = Path(__file__).resolve().parent / "hospice_referrals.json"
 CRUSHER_KPI_POINTS = {
     "pipeline_add": 10,
     "attorney_call": 25,
@@ -3185,6 +3217,192 @@ Schedule a complimentary **10–15 minute call** — phone or in-person at the p
 *Not legal advice · All sales subject to court approval where required · © {year} Scott Hardesty, eXp Realty* 🏠"""
 
 
+FACILITY_VISIT_CHECKLIST = """═══════════════════════════════════════════════════════════
+  PROBATEGUARDIAN — FACILITY VISIT CHECKLIST (print & clip)
+  Scott Hardesty 615-953-0758 · Branton Walker field partner
+═══════════════════════════════════════════════════════════
+
+BEFORE YOU WALK IN
+□ Laminated referral one-pagers (5–10)
+□ Business cards — Scott + Branton
+□ Value script on phone (notes app)
+□ Facility name + social worker target written down
+
+AT THE FRONT DESK
+□ Ask for Director of Social Services or Discharge Planner
+□ Leave one-pager even if SW unavailable ("for families worrying about the house")
+
+WITH THE SOCIAL WORKER (2 min pitch)
+□ "We remove the house burden so families can focus on care"
+□ Not probate attorneys — property Project Coordinators
+□ Zero cost, zero pressure, court-aware
+□ Hand one-pager + card
+
+DATA TO CAPTURE
+□ Social Worker Name: _______________________________
+□ Facility: _______________________________________
+□ Typical discharge path (SNF / home / hospice / hospital)
+□ Best callback number / email
+□ Notes: __________________________________________
+
+FOLLOW-UP (within 48 hrs)
+□ Log in Referral Tracker tab
+□ Text Scott if warm family named
+□ Send thank-you email with digital Guardian Kit link
+
+BRANTON QUEUE RULE
+Any named family + address → tap "Send to Branton Queue" with 🔥 tag
+
+═══════════════════════════════════════════════════════════
+"""
+
+
+def hospice_google_url(query: str) -> str:
+    return f"https://www.google.com/search?q={urllib.parse.quote_plus(query)}"
+
+
+def load_hospice_referrals() -> list:
+    if not HOSPICE_REFERRALS_FILE.exists():
+        return []
+    try:
+        data = json.loads(HOSPICE_REFERRALS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def save_hospice_referrals(rows: list) -> None:
+    HOSPICE_REFERRALS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = HOSPICE_REFERRALS_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    tmp.replace(HOSPICE_REFERRALS_FILE)
+
+
+def get_hospice_referrals() -> list:
+    if "hospice_referrals" not in st.session_state:
+        st.session_state.hospice_referrals = load_hospice_referrals()
+    return st.session_state.hospice_referrals
+
+
+def generate_hospice_value_script(
+    facility: str,
+    family_name: str,
+    social_worker: str,
+) -> str:
+    facility_txt = (facility or "your facility").strip()
+    family_txt = (family_name or "the family").strip()
+    sw_txt = (social_worker or "there").strip()
+    return f"""Hi {sw_txt},
+
+I'm Scott Hardesty with ProbateGuardian / eXp Realty in Middle Tennessee. I partner with {PARTNER_NAME} to help families through the property side of estate transitions.
+
+I know you're focused on {family_txt}'s care at {facility_txt} — that's what matters most right now.
+
+When families are ready (often before or right after passing), **the house becomes the burden**: locks, utilities, contents, siblings, court timelines. **We remove that entire burden so you and the family can focus on Mom's care and grieving** — not becoming accidental project managers.
+
+**What we offer your families (zero cost, zero pressure):**
+- One Project Coordinator (Scott) — estate sales, cleanout, vendors, Net Sheet
+- Express Offers + funded repairs paths
+- We never rush; we respect the hospice timeline
+
+If you ever meet a family worrying about "what happens to the house," hand them our Guardian Kit or my card:
+
+Scott Hardesty · 615-953-0758
+{PARTNER_NAME} · field partner
+
+Happy to drop laminated one-pagers for your social work office — no strings attached.
+
+With respect,
+Scott Hardesty"""
+
+
+def generate_referral_one_pager(
+    parsed: dict,
+    vendors: dict,
+    facility: str,
+    social_worker: str,
+) -> str:
+    sw_txt = (social_worker or "Facility Social Work").strip()
+    fac_txt = (facility or "Partner Facility").strip()
+    header = f"""# 🩺 ProbateGuardian Referral One-Pager
+### For families referred by **{sw_txt}** · **{fac_txt}**
+
+| | |
+|---|---|
+| **Scott Hardesty** | **615-953-0758** |
+| **{PARTNER_NAME}** | Field partner · call support |
+| **Web** | probateguardians.com |
+
+*Hand this to families worrying about the house. We remove the property burden so they can focus on care.*
+
+---
+
+"""
+    return header + generate_guardian_kit(parsed, vendors)
+
+
+def push_hospice_to_branton_queue(
+    decedent: str,
+    address: str,
+    county: str,
+    contact_name: str,
+    contact_phone: str,
+    facility: str,
+    social_worker: str,
+    notes: str,
+) -> int:
+    decedent_txt = (decedent or "Pre-Probate Referral").strip()
+    address_txt = (address or "Address TBD").strip()
+    county_txt = (county or "Middle TN").strip()
+    contact_txt = (contact_name or "Family Contact").strip()
+    phone_txt = (contact_phone or "").strip()
+    facility_txt = (facility or "—").strip()
+    sw_txt = (social_worker or "—").strip()
+    notes_txt = (notes or "").strip()
+
+    raw = (
+        f"🩺 HOSPICE PRE-PROBATE REFERRAL 🔥\n"
+        f"Facility: {facility_txt}\n"
+        f"Social Worker: {sw_txt}\n"
+        f"Family Contact: {contact_txt}\n"
+        f"Phone: {phone_txt or '—'}\n\n"
+        f"Decedent: {decedent_txt}\n"
+        f"Property: {address_txt}\n"
+        f"County: {county_txt}\n\n"
+        f"{notes_txt}"
+    ).strip()
+
+    parsed = {
+        "decedent": decedent_txt,
+        "address": address_txt,
+        "county": county_txt,
+        "heirs": contact_txt,
+        "phone": phone_txt,
+        "email": "",
+        "raw": raw,
+        "vacant_likely": True,
+        "contact_name": contact_txt,
+    }
+    note_block = (
+        f"🔥 HOSPICE PRE-PROBATE — Referred by {sw_txt} @ {facility_txt}\n{notes_txt}"
+    ).strip()
+    st.session_state.leads.insert(
+        0,
+        build_lead(
+            parsed,
+            pipeline_stage="🔥 Hot / New (call today)",
+            status="New/Hot",
+            score=85,
+            source="hospice",
+            assigned_to_branton=True,
+            follow_up_days=0,
+            notes=initial_notes_from_block(note_block, source="Hospice Pipeline"),
+        ),
+    )
+    persist_leads()
+    return 1
+
+
 # ── Load persisted data (after all helpers are defined) ───────────────────────
 get_leads()
 get_vendors()
@@ -3215,7 +3433,7 @@ st.markdown(
 )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab_dashboard, tab_crusher, tab_add_leads, tab_outreach, tab_partner, tab_vendors, tab_training = st.tabs([
+tab_dashboard, tab_crusher, tab_add_leads, tab_outreach, tab_partner, tab_vendors, tab_training, tab_hospice = st.tabs([
     "Dashboard",
     "💰 90-Day Probate Crusher",
     "Add New Leads",
@@ -3223,6 +3441,7 @@ tab_dashboard, tab_crusher, tab_add_leads, tab_outreach, tab_partner, tab_vendor
     "📘 Partner Kit",
     "🛠️ Vendors Rolodex",
     "🎥 Training",
+    "🩺 Hospice & Pre-Probate Pipeline",
 ])
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -4813,3 +5032,221 @@ with tab_training:
         - **615-953-0758** — Scott Hardesty · Mount Juliet, TN
         """
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — Hospice & Pre-Probate Pipeline
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_hospice:
+    st.subheader("🩺 Hospice & Pre-Probate Pipeline")
+    st.caption(
+        f"Warm referrals before probate opens — built for {PARTNER_NAME} on his phone."
+    )
+    st.markdown(
+        '<div class="hospice-hero">'
+        "Tap a green button → copy scripts → log social workers → "
+        "push 🔥 warm families straight to Branton's call list."
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    hospice_county = st.text_input(
+        "County (for hospice social worker search)",
+        value="Wilson",
+        key="hospice_county_input",
+        placeholder="Wilson, Davidson, Rutherford…",
+    )
+    county_q = (hospice_county or "Middle Tennessee").strip()
+
+    st.markdown("### 🔍 Quick Google Searches")
+    st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+    st.link_button(
+        "🔍 Google End-of-Life Social Workers",
+        hospice_google_url("end of life social worker skilled nursing facility Middle Tennessee"),
+        use_container_width=True,
+        type="primary",
+    )
+    st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+    st.link_button(
+        "🔍 Google Skilled Nursing Placement Advisors",
+        hospice_google_url("skilled nursing facility placement advisor social worker Tennessee"),
+        use_container_width=True,
+        type="primary",
+    )
+    st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+    st.link_button(
+        f"🔍 Google Hospice Social Workers — {county_q} County",
+        hospice_google_url(f"hospice social worker {county_q} County Tennessee"),
+        use_container_width=True,
+        type="primary",
+    )
+    st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+    st.download_button(
+        label="📋 Facility Visit Checklist (printable)",
+        data=FACILITY_VISIT_CHECKLIST,
+        file_name=f"facility_visit_checklist_{datetime.now().strftime('%Y%m%d')}.txt",
+        mime="text/plain",
+        use_container_width=True,
+        key="hospice_checklist_download",
+    )
+
+    st.markdown("---")
+    st.markdown("### 📱 Value Script Generator")
+    st.caption('Pre-death offer: "We remove the house burden so you can focus on Mom\'s care."')
+    vs1, vs2 = st.columns(2)
+    with vs1:
+        hospice_facility = st.text_input("Facility name", key="hospice_vs_facility", placeholder="ABC Skilled Nursing")
+    with vs2:
+        hospice_family = st.text_input("Family / resident name", key="hospice_vs_family", placeholder="Smith family")
+    hospice_sw = st.text_input("Social worker first name", key="hospice_vs_sw", placeholder="Sarah")
+    st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+    gen_value_script = st.button(
+        "✨ Generate Value Script",
+        use_container_width=True,
+        type="primary",
+        key="hospice_gen_value_script",
+    )
+    if gen_value_script or st.session_state.get("hospice_value_script"):
+        if gen_value_script:
+            st.session_state.hospice_value_script = generate_hospice_value_script(
+                hospice_facility, hospice_family, hospice_sw
+            )
+        st.text_area(
+            "Copy & text / email to social worker",
+            value=st.session_state.get("hospice_value_script", ""),
+            height=320,
+            key="hospice_value_script_display",
+        )
+
+    st.markdown("---")
+    st.markdown("### 📄 Create Referral One-Pager")
+    st.caption("Beautiful Guardian Kit sheet with phone numbers — hand to social workers & families.")
+    op1, op2 = st.columns(2)
+    with op1:
+        op_decedent = st.text_input("Decedent name", key="hospice_op_decedent", placeholder="Mary Smith")
+        op_address = st.text_input("Property address", key="hospice_op_address", placeholder="123 Main St, Lebanon, TN")
+    with op2:
+        op_county = st.text_input("County", key="hospice_op_county", value=county_q + " County")
+        op_heir = st.text_input("Family contact", key="hospice_op_heir", placeholder="John Smith, son")
+    op3, op4 = st.columns(2)
+    with op3:
+        op_facility = st.text_input("Referring facility", key="hospice_op_facility")
+    with op4:
+        op_sw = st.text_input("Social worker name", key="hospice_op_sw")
+    st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+    gen_one_pager = st.button(
+        "📄 Create Referral One-Pager",
+        use_container_width=True,
+        type="primary",
+        key="hospice_gen_one_pager",
+    )
+    if gen_one_pager:
+        op_parsed = {
+            "decedent": op_decedent or "Estate",
+            "address": op_address or "Address TBD",
+            "county": op_county or county_q,
+            "heirs": op_heir or "Estate Heirs",
+            "phone": "",
+            "email": "",
+            "raw": "",
+        }
+        st.session_state.hospice_one_pager = generate_referral_one_pager(
+            op_parsed,
+            st.session_state.vendors,
+            op_facility,
+            op_sw,
+        )
+    if st.session_state.get("hospice_one_pager"):
+        st.success("✅ Referral One-Pager ready — scroll to preview or download.")
+        st.download_button(
+            label="📥 Download One-Pager (.md)",
+            data=st.session_state.hospice_one_pager,
+            file_name=f"referral_one_pager_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+            mime="text/markdown",
+            use_container_width=True,
+            key="hospice_one_pager_download",
+        )
+        st.markdown(st.session_state.hospice_one_pager)
+
+    st.markdown("---")
+    st.markdown("### 📊 Referral Tracker")
+    st.caption("Social Worker Name · Facility · Notes · Last Contact · Next Action")
+    hospice_rows = get_hospice_referrals()
+    if not hospice_rows:
+        hospice_rows = [{
+            "Social Worker Name": "",
+            "Facility": "",
+            "Notes": "",
+            "Last Contact": "",
+            "Next Action": "",
+        }]
+    edited_hospice = st.data_editor(
+        hospice_rows,
+        use_container_width=True,
+        num_rows="dynamic",
+        hide_index=True,
+        column_config={
+            "Social Worker Name": st.column_config.TextColumn("Social Worker Name", width="medium"),
+            "Facility": st.column_config.TextColumn("Facility", width="medium"),
+            "Notes": st.column_config.TextColumn("Notes", width="large"),
+            "Last Contact": st.column_config.TextColumn("Last Contact", width="small"),
+            "Next Action": st.column_config.TextColumn("Next Action", width="medium"),
+        },
+        key="hospice_referral_editor",
+    )
+    hc1, hc2 = st.columns(2)
+    with hc1:
+        st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+        if st.button("💾 Save Referral Tracker", use_container_width=True, type="primary", key="hospice_save_tracker"):
+            cleaned = [
+                row for row in edited_hospice
+                if any(str(v).strip() for v in row.values())
+            ]
+            st.session_state.hospice_referrals = cleaned
+            save_hospice_referrals(cleaned)
+            st.success(f"✅ Saved {len(cleaned)} referral(s).")
+            st.rerun()
+    with hc2:
+        if st.button("🔄 Reload Tracker", use_container_width=True, key="hospice_reload_tracker"):
+            st.session_state.hospice_referrals = load_hospice_referrals()
+            st.rerun()
+
+    st.markdown("---")
+    st.markdown("### 🔥 Send to Branton Queue")
+    st.caption("Push warm pre-probate leads to the top of Branton's call list — tagged 🔥 Hot.")
+    bq1, bq2 = st.columns(2)
+    with bq1:
+        bq_decedent = st.text_input("Decedent / resident", key="hospice_bq_decedent")
+        bq_address = st.text_input("Property address", key="hospice_bq_address")
+        bq_county = st.text_input("County", key="hospice_bq_county", value=county_q + " County")
+    with bq2:
+        bq_contact = st.text_input("Family contact name", key="hospice_bq_contact")
+        bq_phone = st.text_input("Family phone", key="hospice_bq_phone")
+        bq_facility = st.text_input("Facility", key="hospice_bq_facility")
+    bq_sw = st.text_input("Referring social worker", key="hospice_bq_sw")
+    bq_notes = st.text_area("Warm lead notes", key="hospice_bq_notes", height=100, placeholder="Pre-death — family worried about house…")
+    st.markdown('<div class="hospice-mega-marker"></div>', unsafe_allow_html=True)
+    if st.button(
+        "🔥 Send to Branton Queue",
+        use_container_width=True,
+        type="primary",
+        key="hospice_push_branton",
+    ):
+        if not (bq_decedent.strip() or bq_contact.strip() or bq_address.strip()):
+            st.warning("Enter at least a decedent, contact, or address.")
+        else:
+            n = push_hospice_to_branton_queue(
+                bq_decedent,
+                bq_address,
+                bq_county,
+                bq_contact,
+                bq_phone,
+                bq_facility,
+                bq_sw,
+                bq_notes,
+            )
+            st.success(
+                f"🔥 Pushed **{n}** warm pre-probate lead to {PARTNER_NAME}'s queue — "
+                "check Dashboard → Branton Call Mode."
+            )
+            st.balloons()
