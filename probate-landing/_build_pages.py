@@ -2,6 +2,7 @@
 """Generate Core 30 static pages — run once when structure changes."""
 from pathlib import Path
 
+from _counties_data import CORE_COUNTIES, COUNTY_BY_SLUG, OTHER_COUNTIES
 from _services_data import SERVICES, SERVICE_COUNTIES
 from _service_meta import SERVICE_META
 
@@ -131,6 +132,18 @@ def service_href(svc: dict) -> str:
     return f"/services/{svc['slug']}/"
 
 
+def service_href_slug(slug: str) -> str:
+    return f"/services/{slug}/"
+
+
+def county_href(county: dict) -> str:
+    return f"/counties/{county['slug']}/"
+
+
+def county_href_slug(slug: str) -> str:
+    return f"/counties/{slug}/"
+
+
 def service_by_id() -> dict:
     return {svc["id"]: svc for svc in enriched_services()}
 
@@ -232,18 +245,45 @@ def render_service_page_body(svc: dict) -> str:
     </section>"""
 
 
+def render_core_county_cards(dark: bool = False) -> str:
+    cards = []
+    for c in CORE_COUNTIES:
+        sc = next((x for x in SERVICE_COUNTIES if x["id"] == c["id"]), None)
+        benefit = sc["benefit"] if sc else c["lead"]
+        cards.append(f"""
+        <a class="core-card{" core-card-dark" if dark else ""}" href="{county_href(c)}">
+          <span class="core-card-icon" aria-hidden="true">📍</span>
+          <h2>{c['name']}</h2>
+          <p>{c['cities']}</p>
+          <span class="core-card-arrow">County guide →</span>
+        </a>""")
+    return "".join(cards)
+
+
 def render_service_counties_block() -> str:
     cards = []
-    for c in SERVICE_COUNTIES:
-        bl = "".join(f"<li>{b}</li>" for b in c["bullets"])
-        county_href = f"/counties/#{c['id']}" if c["id"] != "middle-tn" else "/counties/#middle-tn"
+    for c in CORE_COUNTIES:
+        sc = next((x for x in SERVICE_COUNTIES if x["id"] == c["id"]), None)
+        bl = "".join(f"<li>{b}</li>" for b in (sc["bullets"][:3] if sc else []))
         cards.append(f"""
         <article class="county-service-card" id="county-{c['id']}">
           <p class="eyebrow">📍 {c['name']}</p>
-          <h3><a href="{county_href}">{c['name']}</a></h3>
+          <h3><a href="{county_href(c)}">{c['name']}</a></h3>
           <p class="county-service-cities">{c['cities']}</p>
-          <p class="county-service-benefit">{c['benefit']}</p>
+          <p class="county-service-benefit">{c['headline']}</p>
           <ul>{bl}</ul>
+          <div class="county-service-cta">
+            <a href="{county_href(c)}" class="btn btn-secondary btn-sm">County guide →</a>
+            <a href="tel:{PHONE_TEL}" class="btn btn-primary btn-sm">{PHONE_LINK}</a>
+          </div>
+        </article>""")
+    middle = next(x for x in SERVICE_COUNTIES if x["id"] == "middle-tn")
+    cards.append(f"""
+        <article class="county-service-card" id="county-middle-tn">
+          <p class="eyebrow">📍 {middle['name']}</p>
+          <h3><a href="/counties/">{middle['name']}</a></h3>
+          <p class="county-service-cities">{middle['cities']}</p>
+          <p class="county-service-benefit">{middle['benefit']}</p>
           <div class="county-service-cta">
             <a href="tel:{PHONE_TEL}" class="btn btn-primary btn-sm">{PHONE_LINK}</a>
             <a href="/roadmap/" class="btn btn-secondary btn-sm">Get your free Guardian Kit</a>
@@ -254,40 +294,80 @@ def render_service_counties_block() -> str:
       <div class="container">
         <p class="eyebrow eyebrow-light">Local expertise</p>
         <h2 class="section-title section-title-light">Counties We Serve</h2>
-        <p class="section-lead section-lead-light">Probate property support from Nashville to every corner of Middle Tennessee — same Guardian Kit, same compassionate team. Explore our full <a href="/counties/">county guides</a> or call now.</p>
+        <p class="section-lead section-lead-light">Inherited a house in Davidson, Sumner, Wilson, Williamson, or Rutherford County? Each county has a dedicated guide with local probate flavor, city-by-city support, and links to every service your family may need. Same Guardian Kit, same compassionate team — explore <a href="/counties/">all county guides</a> or call now.</p>
         <div class="county-service-grid">{"".join(cards)}</div>
         <div class="cta-phone-strip">
-          <p>Inherited a house in Davidson, Sumner, Wilson, Rutherford, or Williamson? One call starts everything.</p>
+          <p>Inherited a house in Middle Tennessee? One call starts everything.</p>
           <a href="tel:{PHONE_TEL}" class="btn btn-light">{PHONE_LINK}</a>
           <a href="/roadmap/" class="btn btn-secondary btn-on-green">Get your free Guardian Kit</a>
         </div>
       </div>
     </section>"""
 
-COUNTIES = [
-    ("davidson", "Davidson County", "Nashville, Hermitage, Madison, Antioch, Bellevue",
-     "Davidson County Probate Court moves fast — we coordinate property timelines with your attorney while you grieve."),
-    ("sumner", "Sumner County", "Gallatin, Hendersonville, Portland, Westmoreland",
-     "Sumner heirs trust us for Lebanon-adjacent expertise and Gallatin-area probate property support."),
-    ("wilson", "Wilson County", "Lebanon, Mt. Juliet, Watertown, Wilson County lake communities",
-     "Wilson County is home base — deep court knowledge and local vendor rolodex."),
-    ("rutherford", "Rutherford County", "Murfreesboro, Smyrna, La Vergne, Eagleville",
-     "Rutherford estates often involve multiple heirs — we run neutral Net Sheets everyone trusts."),
-    ("williamson", "Williamson County", "Franklin, Brentwood, Spring Hill, Thompson's Station",
-     "Williamson properties deserve funded-repair analysis — we present real ARV upside with compassion."),
-    ("robertson", "Robertson County", "Springfield, White House, Greenbrier, Coopertown",
-     "Robertson County families get the same Guardian Kit and vendor network as Nashville."),
-    ("cheatham", "Cheatham County", "Ashland City, Kingston Springs, Pegram",
-     "Cheatham heirs receive vacant-home insurance guidance and lawn/security coordination."),
-    ("dickson", "Dickson County", "Dickson, White Bluff, Charlotte",
-     "Dickson County probate properties — cash, list, or muniment paths explained plainly."),
-    ("maury", "Maury County", "Columbia, Spring Hill (Maury side), Mt. Pleasant",
-     "Maury County estates benefit from Columbia-market CMAs and Columbia-court awareness."),
-    ("montgomery", "Montgomery County", "Clarksville, St. Bethlehem, Sango",
-     "Montgomery heirs — including military families — get out-of-state heir shipping and cash options."),
-    ("middle-tn", "All of Middle Tennessee", "Every county we can reach with compassion",
-     "Not sure which county? One call to Probate Guardians TN — we route you to the right court, vendors, and plan."),
-]
+
+def render_county_related(county: dict) -> str:
+    svc_parts = [
+        f'<a href="{service_href_slug(slug)}">{label}</a>'
+        for label, slug in county["related_services"]
+    ]
+    county_parts = [
+        f'<a href="{county_href_slug(slug)}">{COUNTY_BY_SLUG[slug]["name"]}</a>'
+        for slug in county["related_counties"]
+    ]
+    return f"""
+    <div class="related-services-block">
+      <h3 class="related-services-title">Services for {county['name']}</h3>
+      <p class="service-related">{" · ".join(svc_parts)}</p>
+      <h3 class="related-services-title">Nearby counties</h3>
+      <p class="service-related">{" · ".join(county_parts)} · <a href="/counties/">All Counties</a> · <a href="/roadmap/">Family Roadmap</a> · <a href="/services/">All Services</a> · <a href="/">Home</a></p>
+    </div>"""
+
+
+def render_county_page_body(county: dict) -> str:
+    paragraphs = "".join(f"<p>{p}</p>" for p in county["paragraphs"])
+    challenges = "".join(f"<li>{c}</li>" for c in county["challenges"])
+    helps = "".join(f"<li>{h}</li>" for h in county["how_we_help"])
+    crumbs = breadcrumbs([
+        ("Home", "/", False),
+        ("Counties", "/counties/", False),
+        (county["name"], county_href(county), True),
+    ])
+    return f"""
+    <section class="page-hero page-hero-service">
+      <div class="container service-detail-inner">
+        {crumbs}
+        <p class="eyebrow">📍 Probate Guardians TN · {county['name']}</p>
+        <h1>{county['headline']}</h1>
+        <p class="county-cities county-cities-hero">{county['cities']}</p>
+        <p class="page-hero-lead">{county['lead']}</p>
+        <p class="phone-line"><a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
+      </div>
+    </section>
+    <section class="section section-warm">
+      <div class="container service-detail-inner">
+        <div class="service-detail-body">
+          {paragraphs}
+        </div>
+        <h2 class="section-title section-title-sm">Common probate challenges in {county['name']}</h2>
+        <ul class="service-detail-bullets county-challenges-list">{challenges}</ul>
+        <h2 class="section-title section-title-sm">How Probate Guardians TN helps {county['name']} families</h2>
+        <ul class="service-detail-bullets">{helps}</ul>
+        {render_county_related(county)}
+        <p class="back-to-services"><a href="/counties/">← Back to All Counties</a></p>
+        <p class="internal-links">Also explore: <a href="/">Home</a> · <a href="/roadmap/">Guardian Kit &amp; Family Roadmap</a> · <a href="/services/">All Services</a> · <a href="/counties/">Counties We Serve</a> · <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
+      </div>
+    </section>
+    <section class="section section-green service-page-cta">
+      <div class="container narrow">
+        <h2 class="section-title section-title-light">{county['name']} heirs — we are ready when you are</h2>
+        <p class="section-lead section-lead-light">No pressure. No obligation. One call connects you to a free Guardian Kit, a complimentary Net Sheet, and a team that understands {county['name']} probate property.</p>
+        <div class="detail-cta-row service-cta-row">
+          <a href="tel:{PHONE_TEL}" class="btn btn-primary btn-cta-phone">{PHONE_LINK}</a>
+          <a href="/roadmap/" class="btn btn-secondary btn-on-green">Get Your Free Guardian Kit</a>
+        </div>
+        <p class="back-to-services back-to-services-light"><a href="/counties/">← Back to All Counties</a></p>
+      </div>
+    </section>"""
 
 
 def build_services() -> str:
@@ -353,63 +433,75 @@ def build_service_page(svc: dict) -> str:
 
 
 def build_counties() -> str:
-    cards = []
-    details = []
-    for cid, name, cities, note in COUNTIES:
-        cards.append(f"""
-        <a class="core-card" href="#{cid}">
-          <span class="core-card-icon" aria-hidden="true">📍</span>
-          <h2>{name}</h2>
-          <p>{cities}</p>
-          <span class="core-card-arrow">County guide →</span>
-        </a>""")
-        details.append(f"""
-    <article class="county-detail" id="{cid}">
-      <div class="container narrow">
-        <p class="eyebrow">Counties We Serve</p>
-        <h2>{name}</h2>
-        <p class="county-cities">{cities}</p>
-        <p class="county-detail-lead">{note}</p>
-        <ul>
-          <li>Free Guardian Kit &amp; <a href="/roadmap/">7-step Family Roadmap</a></li>
-          <li>Probate-aware CMA &amp; Net Sheet — complimentary</li>
-          <li>Cash offers, funded repairs, or full listing — your choice</li>
-          <li>Always <em>subject to court approval</em></li>
-        </ul>
-        {cta_block('<a href="/services/" class="btn btn-secondary">View All Services</a>')}
-        {internal_links()}
-      </div>
-    </article>""")
+    other_cards = []
+    for cid, name, cities, note in OTHER_COUNTIES:
+        other_cards.append(f"""
+        <article class="county-other-card">
+          <h3>{name}</h3>
+          <p class="county-other-cities">{cities}</p>
+          <p>{note}</p>
+        </article>""")
+    crumbs = breadcrumbs([
+        ("Home", "/", False),
+        ("Counties", "/counties/", True),
+    ])
     body = f"""
     <section class="page-hero">
       <div class="container">
+        {crumbs}
         <p class="eyebrow">Nashville-based · County-by-county</p>
         <h1>Counties We Serve in Middle Tennessee</h1>
-        <p class="page-hero-lead">Probate court knowledge in every county below. Your <a href="/roadmap/">Guardian Kit</a> travels with you — questions? <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
+        <p class="page-hero-lead">Probate property is local — court rhythms in Gallatin differ from Franklin, and Mt. Juliet families face different challenges than Murfreesboro heirs. Probate Guardians TN built dedicated county guides for our five core counties, plus support across all of Middle Tennessee. Your <a href="/roadmap/">Guardian Kit</a> travels with you. Questions? <a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
+        <p class="phone-line"><a href="tel:{PHONE_TEL}">{PHONE_LINK}</a></p>
+        <div class="core-hub-links">
+          <a href="/roadmap/" class="btn btn-secondary">Get your free Guardian Kit</a>
+          <a href="/services/" class="btn btn-secondary">All Services</a>
+        </div>
       </div>
     </section>
-    <section class="section">
+    <section class="section section-warm" id="core-counties">
       <div class="container">
-        <div class="core-card-grid">{"".join(cards)}</div>
+        <h2 class="section-title">Core counties we serve</h2>
+        <p class="section-lead">Tap your county for localized probate property guidance — cities, common challenges, and services that fit.</p>
+        <div class="core-card-grid">{render_core_county_cards()}</div>
       </div>
     </section>
     <section class="section section-green">
       <div class="container">
         <div class="cta-phone-strip">
-          <p>Inherited a house in Middle TN? One call starts everything.</p>
+          <p>Inherited a house in Davidson, Sumner, Wilson, Williamson, or Rutherford? One call starts everything.</p>
           <a href="tel:{PHONE_TEL}" class="btn btn-light">{PHONE_LINK}</a>
+          <a href="/roadmap/" class="btn btn-secondary btn-on-green">Get your free Guardian Kit</a>
         </div>
       </div>
     </section>
-    <section class="section section-warm">{"".join(details)}
+    <section class="section">
+      <div class="container">
+        <h2 class="section-title">Also serving across Middle Tennessee</h2>
+        <p class="section-lead">Robertson, Cheatham, Dickson, Maury, Montgomery, and beyond — same Guardian Kit, same vendor network, same compassionate team.</p>
+        <div class="county-other-grid">{"".join(other_cards)}</div>
+        <p class="internal-links" style="margin-top:1.5rem;border-top:none;padding-top:0;">Explore <a href="/services/">all services</a> · <a href="/roadmap/">Family Roadmap</a> · <a href="/">home</a></p>
+      </div>
     </section>"""
     return shell(
         "Counties We Serve | Probate Real Estate Middle Tennessee",
-        "Probate Guardians TN serves Davidson, Sumner, Wilson, Rutherford, Williamson, Robertson, Cheatham, Dickson, Maury, Montgomery & all of Middle Tennessee. (615) 669-7075.",
-        "https://probateguardians.com/counties/",
+        "Probate Guardians TN serves Davidson, Sumner, Wilson, Rutherford & Williamson counties with dedicated guides — plus all of Middle Tennessee. Inherited home help. (615) 669-7075.",
+        f"{SITE}/counties/",
         "../", "../",
         {"cty": True},
         body,
+    )
+
+
+def build_county_page(county: dict) -> str:
+    title = f"{county['name']} Probate Real Estate | Probate Guardians TN"
+    return shell(
+        title,
+        county["meta_description"],
+        f"{SITE}/counties/{county['slug']}/",
+        "../../", "../../",
+        {"cty": True},
+        render_county_page_body(county),
     )
 
 
@@ -482,9 +574,15 @@ def main():
         (svc_dir / "index.html").write_text(build_service_page(svc), encoding="utf-8")
         built.append(f"services/{svc['slug']}/index.html")
     (root / "counties" / "index.html").write_text(build_counties(), encoding="utf-8")
+    county_built = ["counties/index.html"]
+    for county in CORE_COUNTIES:
+        county_dir = root / "counties" / county["slug"]
+        county_dir.mkdir(exist_ok=True)
+        (county_dir / "index.html").write_text(build_county_page(county), encoding="utf-8")
+        county_built.append(f"counties/{county['slug']}/index.html")
     (root / "about" / "index.html").write_text(build_about(), encoding="utf-8")
-    print(f"Built {len(built)} service pages + counties/, about/")
-    for path in built:
+    print(f"Built {len(built)} service pages + {len(county_built)} county pages + about/")
+    for path in built + county_built:
         print(f"  · {path}")
 
 
