@@ -1980,38 +1980,42 @@ body.gk-modal-open {
   margin: 0.25rem 0 0;
 }
 
-.gk-modal-success-icon {
-  width: 3rem;
-  height: 3rem;
-  border-radius: 50%;
-  background: var(--green-700);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  font-weight: 700;
-  margin: 0 auto 1rem;
-}
-
 #gk-modal-success-panel {
   text-align: center;
 }
 
-#gk-modal-success-panel h2 {
+.gk-modal-success-headline {
+  font-family: var(--font-serif);
+  font-size: clamp(1.35rem, 4.5vw, 1.65rem);
+  color: var(--green-700);
+  margin-bottom: 0.85rem;
   padding-right: 0;
   text-align: center;
+  line-height: 1.25;
 }
 
 .gk-modal-success-text {
   color: var(--text-muted);
-  line-height: 1.6;
+  line-height: 1.65;
   margin-bottom: 1.25rem;
+  text-align: left;
+}
+
+.gk-modal-success-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
 }
 
 .gk-modal-download {
-  margin-bottom: 0.65rem;
   width: 100%;
+}
+
+.gk-modal-copy-feedback {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--green-600);
+  margin-top: 0.75rem;
 }
 
 @media print {

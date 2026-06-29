@@ -49,7 +49,10 @@
   var modalError = document.getElementById("gk-modal-error");
   var triggers = document.querySelectorAll(".js-guardian-kit-trigger");
   var closeEls = modal.querySelectorAll("[data-gk-close]");
+  var copyCrmBtn = document.getElementById("gk-copy-crm-btn");
+  var copyFeedback = document.getElementById("gk-copy-feedback");
   var lastFocus = null;
+  var lastLead = null;
 
   function showError(message) {
     if (!modalError) return;
@@ -93,9 +96,23 @@
     }
   }
 
-  function showSuccess() {
+  function buildCrmCopy(lead) {
+    var lines = [
+      "Guardian Kit Lead — probateguardians.com",
+      "Name: " + lead.fullName,
+      "Email: " + lead.email,
+      "Phone: " + (lead.phone || "—"),
+      "County: " + lead.county,
+      "Lead added to system — status: Kit Downloaded 🔥",
+    ];
+    return lines.join("\n");
+  }
+
+  function showSuccess(lead) {
+    lastLead = lead;
     if (formPanel) formPanel.classList.add("hidden");
     if (successPanel) successPanel.classList.remove("hidden");
+    if (copyFeedback) copyFeedback.classList.add("hidden");
     clearError();
     var downloadBtn = successPanel && successPanel.querySelector(".gk-modal-download");
     if (downloadBtn) {
@@ -103,6 +120,29 @@
         downloadBtn.focus();
       }, 50);
     }
+  }
+
+  if (copyCrmBtn) {
+    copyCrmBtn.addEventListener("click", function () {
+      if (!lastLead) return;
+      var text = buildCrmCopy(lastLead);
+      function onCopied() {
+        if (copyFeedback) {
+          copyFeedback.classList.remove("hidden");
+          window.setTimeout(function () {
+            copyFeedback.classList.add("hidden");
+          }, 2500);
+        }
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(onCopied).catch(function () {
+          window.prompt("Copy lead info:", text);
+        });
+      } else {
+        window.prompt("Copy lead info:", text);
+        onCopied();
+      }
+    });
   }
 
   triggers.forEach(function (trigger) {
@@ -133,6 +173,12 @@
       }
 
       var data = new FormData(modalForm);
+      var lead = {
+        fullName: data.get("full-name") || "",
+        email: data.get("email") || "",
+        phone: data.get("phone") || "",
+        county: data.get("county") || "",
+      };
       var params = new URLSearchParams();
       params.append("form-name", "guardian-kit-lead");
       data.forEach(function (value, key) {
@@ -156,7 +202,7 @@
           if (!res.ok) {
             throw new Error("submit failed");
           }
-          showSuccess();
+          showSuccess(lead);
         })
         .catch(function () {
           showError("Something went wrong. Please call or text (615) 669-7075 and we'll send your kit.");

@@ -390,11 +390,14 @@
         </form>
       </div>
       <div class="gk-modal-panel hidden" id="gk-modal-success-panel" role="status">
-        <p class="gk-modal-success-icon" aria-hidden="true">✓</p>
-        <h2>Thank you!</h2>
-        <p class="gk-modal-success-text">Your Guardian Kit is on the way. Branton will personally follow up within 24 hours.</p>
-        <a href="/guardian-kit.pdf" class="btn btn-hero-phone btn-block gk-modal-download" download="Probate-Guardians-Guardian-Kit.pdf">Download Guardian Kit PDF</a>
-        <button type="button" class="btn btn-secondary btn-block" data-gk-close>Close</button>
+        <h2 class="gk-modal-success-headline">✅ Request Received!</h2>
+        <p class="gk-modal-success-text">Thank you! Your personalized Guardian Kit is on the way. Branton will personally call or text you within 24 hours to answer any questions — no pressure, just support.</p>
+        <div class="gk-modal-success-actions">
+          <a href="/guardian-kit.pdf" class="btn btn-hero-phone btn-block gk-modal-download" download="Probate-Guardians-Guardian-Kit.pdf">Download Temporary Roadmap (for now)</a>
+          <button type="button" class="btn btn-secondary btn-block" id="gk-copy-crm-btn">Copy Lead Info for CRM</button>
+        </div>
+        <p class="gk-modal-copy-feedback hidden" id="gk-copy-feedback" role="status">Copied to clipboard!</p>
+        <p class="visually-hidden" id="gk-internal-note">Lead added to system — status: Kit Downloaded 🔥</p>
       </div>
     </div>
   </div>
