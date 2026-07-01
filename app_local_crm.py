@@ -2,7 +2,9 @@ import csv
 import html
 import io
 import json
+import os
 import re
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
@@ -11,6 +13,8 @@ import streamlit as st
 
 # ── Constants ────────────────────────────────────────────────────────────────
 PARTNER_NAME = "Branton Walker"
+NOTES_SAVED_MESSAGE = "💾 Notes Saved"
+NOTES_SAVED_FEEDBACK_SEC = 4
 PHONE_PLACEHOLDER = "— add phone —"
 ASSIGN_STATUS = f"Assigned to {PARTNER_NAME}"
 LEGACY_ASSIGN_STATUSES = ("Assigned to Brantley", ASSIGN_STATUS)
@@ -1103,7 +1107,10 @@ def normalize_lead(lead: dict) -> dict:
         lead["notes"] = []
     elif isinstance(lead["notes"], str) and lead["notes"]:
         lead["notes"] = [{"ts": lead.get("created", ""), "text": lead["notes"], "by": "Legacy"}]
+    elif not isinstance(lead.get("notes"), list):
+        lead["notes"] = []
 
+    lead.setdefault("notes_user_edited", bool(lead.get("notes")))
     lead.setdefault("calls", 1 if lead.get("status") == "Contacted" else 0)
     lead.setdefault(
         "assigned_to_branton",
@@ -1207,13 +1214,83 @@ def _ensure_unique_lead_ids(leads: list) -> bool:
     return changed
 
 
+def _ensure_all_leads_have_notes_list(leads: list) -> bool:
+    changed = False
+    for lead in leads:
+        notes = lead.get("notes")
+        if notes is None:
+            lead["notes"] = []
+            changed = True
+        elif isinstance(notes, str):
+            lead["notes"] = (
+                [{"ts": lead.get("created", datetime.now().isoformat()), "text": notes, "by": "Legacy"}]
+                if notes.strip()
+                else []
+            )
+            changed = True
+        elif not isinstance(notes, list):
+            lead["notes"] = []
+            changed = True
+        if "notes_user_edited" not in lead:
+            lead["notes_user_edited"] = bool(lead.get("notes"))
+            changed = True
+    return changed
+
+
+def _persist_leads_to_disk(leads: list) -> None:
+    """Atomic write so notes survive crashes and redeploys."""
+    LEADS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = LEADS_FILE.with_suffix(".json.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(leads, f, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    tmp_path.replace(LEADS_FILE)
+
+
+def _merge_leads_preserving_notes(session: list, disk: list) -> list:
+    """Prefer in-session notes when Branton has edited them."""
+    disk_map = {l.get("id"): l for l in disk if l.get("id")}
+    merged: dict = {}
+    for lead in session:
+        lid = lead.get("id")
+        if not lid:
+            continue
+        disk_lead = disk_map.get(lid)
+        if not disk_lead:
+            merged[lid] = lead
+            continue
+        if lead.get("notes_user_edited"):
+            combined = dict(disk_lead)
+            combined["notes"] = lead.get("notes") or []
+            combined["notes_user_edited"] = True
+            merged[lid] = combined
+            continue
+        s_notes = lead.get("notes") or []
+        d_notes = disk_lead.get("notes") or []
+        s_ts = (s_notes[0].get("ts", "") if s_notes else "")
+        d_ts = (d_notes[0].get("ts", "") if d_notes else "")
+        combined = dict(disk_lead)
+        if s_ts and s_ts >= d_ts:
+            combined["notes"] = s_notes
+        merged[lid] = combined
+    for lid, disk_lead in disk_map.items():
+        if lid not in merged:
+            merged[lid] = disk_lead
+    return list(merged.values())
+
+
 def load_leads() -> list:
     if LEADS_FILE.exists():
         try:
-            with open(LEADS_FILE, "r") as f:
+            with open(LEADS_FILE, "r", encoding="utf-8") as f:
                 leads = json.load(f)
+            if not isinstance(leads, list):
+                return []
             if _ensure_unique_lead_ids(leads):
-                save_leads_raw(leads)
+                _persist_leads_to_disk(leads)
+            if _ensure_all_leads_have_notes_list(leads):
+                _persist_leads_to_disk(leads)
             return [normalize_lead(l) for l in leads]
         except (json.JSONDecodeError, IOError):
             return []
@@ -1221,19 +1298,27 @@ def load_leads() -> list:
 
 
 def save_leads_raw(leads: list) -> None:
-    with open(LEADS_FILE, "w") as f:
-        json.dump(leads, f, indent=2)
+    _persist_leads_to_disk(leads)
 
 
 def save_leads(leads: list) -> None:
-    with open(LEADS_FILE, "w") as f:
-        json.dump(leads, f, indent=2)
+    _persist_leads_to_disk(leads)
 
 
 def commit_leads_and_reload() -> list:
-    """Persist leads and immediately reload session state — no stale queue."""
-    save_leads(st.session_state.leads)
-    st.session_state.leads = load_leads()
+    """Persist leads and reload — never drop saved notes from session."""
+    session = st.session_state.leads
+    save_leads(session)
+    try:
+        with open(LEADS_FILE, "r", encoding="utf-8") as f:
+            disk = json.load(f)
+        if not isinstance(disk, list):
+            disk = []
+    except (json.JSONDecodeError, IOError):
+        disk = []
+    merged = _merge_leads_preserving_notes(session, disk)
+    save_leads(merged)
+    st.session_state.leads = [normalize_lead(l) for l in merged]
     st.session_state.queue_version = st.session_state.get("queue_version", 0) + 1
     return st.session_state.leads
 
@@ -1266,6 +1351,8 @@ else:
     ids = [l.get("id") for l in st.session_state.leads]
     if len(ids) != len(set(ids)):
         st.session_state.leads = load_leads()
+        save_leads(st.session_state.leads)
+    elif _ensure_all_leads_have_notes_list(st.session_state.leads):
         save_leads(st.session_state.leads)
 
 VENDOR_CATEGORIES = [
@@ -3918,11 +4005,14 @@ def log_call(lead_id: str) -> None:
 def add_note(lead_id: str, text: str, author: str = "Scott") -> None:
     lead = find_lead(lead_id)
     if lead and text.strip():
+        if not isinstance(lead.get("notes"), list):
+            lead["notes"] = []
         lead["notes"].insert(0, {
             "ts": datetime.now().isoformat(),
             "text": text.strip(),
             "by": author,
         })
+        lead["notes_user_edited"] = True
         lead["activity"].insert(0, {
             "ts": datetime.now().isoformat(),
             "type": "note",
@@ -3933,19 +4023,38 @@ def add_note(lead_id: str, text: str, author: str = "Scott") -> None:
 
 def get_lead_notes_full_text(lead: dict) -> str:
     """Full note body for card editor — no truncation."""
+    if lead.get("notes_user_edited"):
+        notes = lead.get("notes") or []
+        parts = [(n.get("text") or "").strip() for n in notes if (n.get("text") or "").strip()]
+        return "\n\n".join(parts)
     notes = lead.get("notes") or []
     if not notes:
         return ""
     return "\n\n".join((n.get("text") or "").strip() for n in notes if (n.get("text") or "").strip())
 
 
-def set_lead_notes_full_text(lead_id: str, text: str, author: str = None) -> None:
-    """Persist entire note field instantly."""
+def _notes_saved_visible(lead_id: str) -> bool:
+    if st.session_state.get("branton_note_saved_id") != lead_id:
+        return False
+    saved_at = st.session_state.get("branton_note_saved_at", 0)
+    return (time.time() - saved_at) < NOTES_SAVED_FEEDBACK_SEC
+
+
+def _flash_notes_saved(lead_id: str) -> None:
+    st.session_state.branton_note_saved_id = lead_id
+    st.session_state.branton_note_saved_at = time.time()
+
+
+def set_lead_notes_full_text(lead_id: str, text: str, author: str = None, *, show_saved: bool = False) -> bool:
+    """Persist entire note field instantly to leads_data.json."""
+    if not lead_id:
+        return False
     lead = find_lead(lead_id)
     if not lead:
-        return
+        return False
     author = author or PARTNER_NAME
     cleaned = (text or "").strip()
+    lead["notes_user_edited"] = True
     if cleaned:
         lead["notes"] = [{
             "ts": datetime.now().isoformat(),
@@ -3955,25 +4064,29 @@ def set_lead_notes_full_text(lead_id: str, text: str, author: str = None) -> Non
     else:
         lead["notes"] = []
     save_leads(st.session_state.leads)
+    if show_saved:
+        _flash_notes_saved(lead_id)
+    return True
 
 
 def _on_card_note_saved(lead_id: str, widget_key: str) -> None:
     if not lead_id:
         return
-    set_lead_notes_full_text(lead_id, st.session_state.get(widget_key, ""))
+    set_lead_notes_full_text(lead_id, st.session_state.get(widget_key, ""), show_saved=True)
 
 
 def _init_card_notes_widget(notes_key: str, lead: dict, real_lead_id: str) -> None:
     """Init notes widget state BEFORE st.text_area renders — avoids API exceptions."""
     sync_id_key = f"{notes_key}_lid"
+    fresh = find_lead(real_lead_id) or lead
     if st.session_state.get(sync_id_key) != real_lead_id:
-        st.session_state[notes_key] = get_lead_notes_full_text(lead)
+        st.session_state[notes_key] = get_lead_notes_full_text(fresh)
         st.session_state[sync_id_key] = real_lead_id
 
 
 def _save_card_notes(lead_id: str, notes_key: str) -> None:
     if lead_id:
-        set_lead_notes_full_text(lead_id, st.session_state.get(notes_key, ""))
+        set_lead_notes_full_text(lead_id, st.session_state.get(notes_key, ""), show_saved=True)
 
 
 def _append_quick_note(lead_id: str, notes_key: str) -> str:
@@ -3985,7 +4098,7 @@ def _append_quick_note(lead_id: str, notes_key: str) -> str:
     stamp = datetime.now().strftime("%b %d, %Y %I:%M %p")
     line = f"[{stamp}] Call logged"
     new_text = f"{base}\n\n{line}".strip() if base.strip() else line
-    set_lead_notes_full_text(lead_id, new_text)
+    set_lead_notes_full_text(lead_id, new_text, show_saved=True)
     st.session_state[notes_key] = new_text
     lead = find_lead(lead_id)
     if lead:
@@ -4002,8 +4115,7 @@ def _cb_quick_note(lead_id: str, notes_key: str) -> None:
     if not lead_id:
         return
     _append_quick_note(lead_id, notes_key)
-    st.session_state.branton_note_saved_id = lead_id
-    st.toast("Saved!")
+    _flash_notes_saved(lead_id)
 
 
 def _cb_toggle_script(script_toggle_key: str) -> None:
@@ -5117,8 +5229,8 @@ def _render_call_queue_card(
         label_visibility="collapsed",
     )
 
-    if st.session_state.get("branton_note_saved_id") == real_lead_id:
-        st.markdown('<div class="bw-card-flash">✓ Saved!</div>', unsafe_allow_html=True)
+    if _notes_saved_visible(real_lead_id):
+        st.markdown(f'<div class="bw-card-flash">{NOTES_SAVED_MESSAGE}</div>', unsafe_allow_html=True)
     if st.session_state.get("branton_action_flash_id") == real_lead_id:
         msg = st.session_state.get("branton_action_flash_msg", "Saved!")
         st.markdown(f'<div class="bw-card-flash">✓ {msg}</div>', unsafe_allow_html=True)
@@ -5295,7 +5407,6 @@ def render_crm_call_queue(leads: list) -> None:
             )
 
     st.session_state["_cq_done_serial"] = run_serial
-    st.session_state.pop("branton_note_saved_id", None)
     st.session_state.pop("branton_action_flash_id", None)
     st.session_state.pop("branton_action_flash_msg", None)
 
