@@ -4337,6 +4337,107 @@ with st.sidebar:
     st.metric("Due Today", analytics["due_today"])
     st.metric("Calls", analytics["total_calls"])
 
+# ── Newspaper Scraper tab helpers (isolated — used only by tab_newspaper) ─────
+_NS_LINKS = {
+    "tnpublicnotice.com": "https://www.tnpublicnotice.com/",
+    "Gallatin News": "https://www.gallatinnews.com/",
+    "Sumner County Assessor": "https://sumnertn.geopowered.com/propertysearch/",
+}
+_NS_PROBATE_KW = ("deceased", "estate of", "notice to creditors", "died on", "in re:", "probate")
+_NS_ADDR_KW = (
+    "pike", "road", "rd", "drive", "dr", "lane", "ln", "avenue", "ave",
+    "street", "st", "court", "ct", "way", "blvd", "gallatin", "hendersonville",
+    "portland", "white house",
+)
+_NS_QUEUE_NOTE = "Newspaper Scrape • High Potential Asset"
+
+
+def _ns_extract_decedent(line: str) -> str:
+    m = re.search(r"estate of\s+(.+?)(?:,|\.|$)", line, re.I)
+    if m:
+        return m.group(1).strip()[:90]
+    m2 = re.search(r"^([A-Z][a-z]+(?:\s+[A-Z][\.'-]?[a-z]+)+)", line)
+    if m2:
+        return m2.group(1).strip()[:90]
+    return line[:90]
+
+
+def _ns_phone_search_string(line: str) -> str:
+    words = [w for w in re.sub(r"[^A-Za-z\s]", " ", line).split() if len(w) > 2]
+    if len(words) >= 2:
+        return f"{words[0]} {words[-1]} · Sumner County, TN"
+    return line[:50]
+
+
+def _ns_score_line(line: str) -> str:
+    lower = line.lower()
+    if any(word in lower for word in _NS_ADDR_KW):
+        return "High"
+    if any(kw in lower for kw in _NS_PROBATE_KW):
+        return "Medium"
+    return "Low"
+
+
+def _ns_analyze_text(raw: str) -> list:
+    results = []
+    for line in [ln.strip() for ln in raw.split("\n") if ln.strip()]:
+        if not any(kw in line.lower() for kw in _NS_PROBATE_KW):
+            continue
+        results.append({
+            "decedent": _ns_extract_decedent(line),
+            "real_estate_score": _ns_score_line(line),
+            "phone_search_string": _ns_phone_search_string(line),
+            "status": "Analyzed",
+            "raw": line,
+            "county": "Sumner County",
+        })
+    order = {"High": 3, "Medium": 2, "Low": 1}
+    results.sort(key=lambda x: order.get(x["real_estate_score"], 0), reverse=True)
+    return results
+
+
+def _ns_push_high_to_queue(results: list, selected: list) -> int:
+    added = 0
+    for row in selected:
+        if row.get("real_estate_score") != "High" or row.get("status") == "Queued":
+            continue
+        decedent = (row.get("decedent") or "").strip()
+        if not decedent:
+            continue
+        note_text = _NS_QUEUE_NOTE
+        if row.get("phone_search_string"):
+            note_text += f"\n{row['phone_search_string']}"
+        if row.get("raw"):
+            note_text += f"\n{row['raw']}"
+        parsed = {
+            "decedent": decedent,
+            "address": "Address TBD",
+            "county": row.get("county", "Sumner County"),
+            "heirs": "Contact TBD",
+            "phone": "",
+            "email": "",
+            "raw": row.get("raw", decedent),
+        }
+        st.session_state.leads.insert(
+            0,
+            build_lead(
+                parsed,
+                pipeline_stage="🔥 Hot / New (call today)",
+                status="New/Hot",
+                score=85,
+                source="newspaper_scraper",
+                assigned_to_branton=True,
+                follow_up_days=0,
+                notes=initial_notes_from_block(note_text, source="Newspaper Scraper"),
+            ),
+        )
+        row["status"] = "Queued"
+        added += 1
+    if added:
+        persist_leads()
+    return added
+
+
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown('<p class="hero-title">🏠 ProbateGuardian Free TN</p>', unsafe_allow_html=True)
 st.markdown(
@@ -4345,10 +4446,11 @@ st.markdown(
 )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab_dashboard, tab_crusher, tab_add_leads, tab_outreach, tab_partner, tab_vendors, tab_training, tab_hospice = st.tabs([
+tab_dashboard, tab_crusher, tab_add_leads, tab_newspaper, tab_outreach, tab_partner, tab_vendors, tab_training, tab_hospice = st.tabs([
     "Dashboard",
     "💰 90-Day Probate Crusher",
     "Add New Leads",
+    "📰 Newspaper Scraper • Small Counties",
     "Generate Outreach",
     "📘 Partner Kit",
     "🛠️ Vendors Rolodex",
@@ -5935,6 +6037,118 @@ You never have to figure out the hard stuff alone.""",
         ],
     ),
 ]
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — Newspaper Scraper • Small Counties (isolated)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_newspaper:
+    st.session_state.setdefault("ns_scraper_raw", "")
+    st.session_state.setdefault("ns_scraper_results", [])
+
+    st.markdown(
+        """
+        <style>
+        .ns-links {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 0.75rem 0.85rem;
+            margin-bottom: 0.85rem;
+            font-size: 0.88rem;
+        }
+        .ns-links a { color: #58a6ff; font-weight: 600; text-decoration: none; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+    ns_link_bits = " | ".join(
+        f'<a href="{url}" target="_blank" rel="noopener">{label}</a>'
+        for label, url in _NS_LINKS.items()
+    )
+    st.markdown(f'<div class="ns-links">Quick links: {ns_link_bits}</div>', unsafe_allow_html=True)
+
+    ns_raw = st.text_area(
+        "Paste raw obituaries, Notice to Creditors, or court text here",
+        value=st.session_state.get("ns_scraper_raw", ""),
+        height=360,
+        placeholder="Paste from tnpublicnotice.com, Gallatin News, obituaries, or court notices…",
+        key="ns_scraper_paste",
+    )
+
+    if st.button("Analyze & Score Leads", use_container_width=True, type="primary", key="ns_analyze_btn"):
+        if not ns_raw.strip():
+            st.error("Paste some text first.")
+        else:
+            st.session_state.ns_scraper_raw = ns_raw
+            st.session_state.ns_scraper_results = _ns_analyze_text(ns_raw)
+            if st.session_state.ns_scraper_results:
+                st.success(f"✅ **{len(st.session_state.ns_scraper_results)}** leads analyzed")
+            else:
+                st.warning("No probate-related lines detected.")
+            st.rerun()
+
+    ns_results = st.session_state.get("ns_scraper_results", [])
+    if ns_results:
+        ns_editor_rows = [
+            {
+                "Select": False,
+                "Decedent": row.get("decedent", ""),
+                "Real Estate Score": row.get("real_estate_score", "Low"),
+                "Phone Search String": row.get("phone_search_string", ""),
+                "Status": row.get("status", "Analyzed"),
+            }
+            for row in ns_results
+        ]
+        ns_edited = st.data_editor(
+            ns_editor_rows,
+            column_config={
+                "Select": st.column_config.CheckboxColumn(
+                    "Select",
+                    help="Check High-score leads to add to Call Queue",
+                    default=False,
+                ),
+                "Decedent": st.column_config.TextColumn("Decedent", disabled=True),
+                "Real Estate Score": st.column_config.TextColumn("Real Estate Score", disabled=True),
+                "Phone Search String": st.column_config.TextColumn("Phone Search String", disabled=True),
+                "Status": st.column_config.TextColumn("Status", disabled=True),
+            },
+            disabled=["Decedent", "Real Estate Score", "Phone Search String", "Status"],
+            hide_index=True,
+            use_container_width=True,
+            key="ns_scraper_table",
+        )
+
+        ns_high_selected = []
+        for r in ns_edited:
+            if not r.get("Select") or r.get("Real Estate Score") != "High":
+                continue
+            for orig in ns_results:
+                if (
+                    orig.get("decedent") == r.get("Decedent")
+                    and orig.get("phone_search_string") == r.get("Phone Search String")
+                ):
+                    ns_high_selected.append(orig)
+                    break
+
+        if st.button(
+            "✅ Add Selected High-Score Leads to Call Queue",
+            use_container_width=True,
+            type="primary",
+            key="ns_push_selected_btn",
+        ):
+            if not ns_high_selected:
+                st.warning("Select at least one **High**-score row in the table.")
+            else:
+                n = _ns_push_high_to_queue(ns_results, ns_high_selected)
+                st.session_state.ns_scraper_results = ns_results
+                if n:
+                    st.success(f"🔥 **{n}** leads added to Call Queue — check Dashboard → Branton Call Mode")
+                    st.rerun()
+                else:
+                    st.info("No new leads added (may already be queued).")
+
+        st.caption("Only **High**-score rows can be pushed. Status updates to *Queued* after add.")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
