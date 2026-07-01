@@ -16,7 +16,9 @@ class _LazyApp:
 
         main = sys.modules.get("__main__")
         main_file = getattr(main, "__file__", "") or ""
-        if main is not None and main_file.endswith(("app.py", "app_local_crm.py")):
+        if main is not None and main_file.endswith("app_local_crm.py"):
+            return main
+        if main is not None and main_file.endswith("app.py"):
             return main
         import importlib
 
