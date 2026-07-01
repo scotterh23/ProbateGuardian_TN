@@ -5598,6 +5598,7 @@ def render_first_to_call_middle_tn(leads: list) -> None:
 _MAIN_SECTIONS = [
     "📞 Call Queue",
     "🚀 First-to-Call",
+    "📰 Newspaper Scraper • Small Counties",
     "🤖 AI Agent Lead Harvester • Small Counties",
     "🎥 Training",
 ]
@@ -5631,6 +5632,10 @@ def _render_app_shell() -> None:
     elif main_view == _MAIN_SECTIONS[1]:
         render_first_to_call_middle_tn(st.session_state.leads)
     elif main_view == _MAIN_SECTIONS[2]:
+        from newspaper_scraper import render_newspaper_scraper_tab
+
+        render_newspaper_scraper_tab(st.session_state.leads)
+    elif main_view == _MAIN_SECTIONS[3]:
         from agent_harvester import render_ai_agent_lead_harvester
 
         render_ai_agent_lead_harvester(st.session_state.leads)
