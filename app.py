@@ -7085,6 +7085,20 @@ with tab_newspaper:
         }
         .ns-stat b { display: block; font-size: 1.15rem; color: #e6edf3; }
         .ns-stat span { font-size: 0.68rem; color: #8b949e; text-transform: uppercase; }
+        .ns-drop-hint {
+            font-size: 0.78rem;
+            color: #8b949e;
+            text-align: center;
+            margin: 0.35rem 0 0.65rem 0;
+            line-height: 1.4;
+        }
+        .ns-file-count {
+            font-size: 0.82rem;
+            color: #3fb950;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 0.5rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -7096,53 +7110,70 @@ with tab_newspaper:
     )
     st.markdown(
         '<div class="ns-drop-zone">'
-        "Drop 1–20 Caselink PDFs, screenshot batches, or full newspaper PDFs — or paste raw notices below"
+        "Drop 1–20 full Caselink PDFs + screenshot batches + newspaper PDFs — all at once"
         "</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<p class="ns-drop-hint">Works with 4–6 page Caselink PDFs — drop entire folder if you want.</p>',
         unsafe_allow_html=True,
     )
 
     ns_uploads = st.file_uploader(
-        "Drop zone",
+        "Drop zone — up to 20 files",
         type=["pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp"],
         accept_multiple_files=True,
         key="ns_beast_drop",
         label_visibility="collapsed",
     )
+    if ns_uploads:
+        n_files = len(ns_uploads)
+        pdf_n = sum(1 for u in ns_uploads if (u.name or "").lower().endswith(".pdf"))
+        img_n = n_files - pdf_n
+        st.markdown(
+            f'<p class="ns-file-count">✓ {n_files} file{"s" if n_files != 1 else ""} loaded'
+            f" ({pdf_n} PDF · {img_n} image) — ready for one-click processing</p>",
+            unsafe_allow_html=True,
+        )
+        if n_files > 20:
+            st.warning("Max 20 files per batch — first 20 will be processed.")
 
     st.link_button("tnpublicnotice.com", _NS_LINKS["tnpublicnotice.com"], use_container_width=True)
 
     ns_raw = st.text_area(
-        "Paste raw notices",
+        "Paste raw notices (optional — combine with file drop)",
         value=st.session_state.get("ns_scraper_raw", ""),
-        height=320,
-        placeholder="Estate of Mary Jane Thompson\nWilliam R. Davis — Hendersonville\nRobert Smith — Wilson County…",
+        height=280,
+        placeholder="Optional: paste names or notices here alongside your file drop…",
         key="ns_scraper_paste",
         label_visibility="collapsed",
     )
 
     st.markdown('<div class="ns-btn-monster-marker"></div>', unsafe_allow_html=True)
     if st.button(
-        "🔥 Scrape + Qualify + Generate All Assessor Links + Push HOT to Branton",
+        "🔥 Process All Files + Qualify + Generate Assessor Links + Push HOT to Branton",
         use_container_width=True,
         type="primary",
         key="ns_monster_btn",
     ):
-        if not ns_raw.strip() and not ns_uploads:
-            st.error("Drop PDFs/screenshots or paste notices first.")
+        batch_uploads = (ns_uploads or [])[:20]
+        if not ns_raw.strip() and not batch_uploads:
+            st.error("Drop up to 20 PDFs/screenshots or paste notices first.")
         else:
             st.session_state.ns_scraper_raw = ns_raw
-            results = _ns_analyze_inputs(ns_raw, ns_uploads or [])
+            results = _ns_analyze_inputs(ns_raw, batch_uploads)
             st.session_state.ns_scraper_results = results
             st.session_state.ns_pipeline_ran = True
             pushed = _ns_push_qualified_to_queue(results) if results else 0
             st.session_state.ns_scraper_results = results
+            file_note = f" from **{len(batch_uploads)}** file{'s' if len(batch_uploads) != 1 else ''}" if batch_uploads else ""
             if results:
                 st.session_state.ns_push_flash = (
-                    f"🔥 Beast run complete — **{len(results)}** qualified · "
+                    f"🔥 Processed{file_note} — **{len(results)}** leads · "
                     f"**{pushed}** pushed to {PARTNER_NAME}'s HOT queue."
                 )
             else:
-                st.warning("No names extracted — try clearer PDFs or paste names one per line.")
+                st.warning("No names extracted — try clearer Caselink PDFs or paste names one per line.")
             st.rerun()
 
     if st.session_state.get("ns_push_flash"):
