@@ -4979,63 +4979,487 @@ with tab_outreach:
                 height=380,
             )
 
+# ── Bulk Qualifier tab helpers (isolated — used only by tab_add_leads) ─────────
+try:
+    from pypdf import PdfReader as _BqPdfReader
+except ImportError:
+    _BqPdfReader = None
+
+try:
+    import pytesseract as _bq_tesseract
+    from PIL import Image as _BqImage
+except ImportError:
+    _bq_tesseract = None
+    _BqImage = None
+
+_BQ_DAVIDSON_RE = re.compile(r"probate\s+court\s+of\s+davidson|davidson\s+county.*probate", re.I)
+_BQ_DECEDENT_RE = (
+    re.compile(r"estate\s+of\s+(.+?)(?:,|\n|deceased|\.|$)", re.I),
+    re.compile(r"in\s+re:?\s*(?:the\s+)?estate\s+of\s+(.+?)(?:,|\n|\.|$)", re.I),
+    re.compile(r"(?:decedent|deceased)[:\s]+(.+?)(?:\n|,|\.|$)", re.I),
+)
+_BQ_HEIR_BLOCK_RE = re.compile(
+    r"(?:heirs?|beneficiaries|survived\s+by|children)[:\s]*\n?(.+?)(?:\n\n|personal\s+representative|executor|administrator|waiver)",
+    re.I | re.S,
+)
+_BQ_RE_PROPERTY_RE = re.compile(
+    r"(?:real\s+property|real\s+estate|parcel|land\s+located|property\s+located|"
+    r"residence\s+of\s+the\s+decedent)",
+    re.I,
+)
+
+
+def _bq_extract_pdf_text(data: bytes) -> str:
+    if not _BqPdfReader or not data:
+        return ""
+    try:
+        reader = _BqPdfReader(io.BytesIO(data))
+        return "\n\n".join((page.extract_text() or "") for page in reader.pages).strip()
+    except Exception:
+        return ""
+
+
+def _bq_extract_image_text(data: bytes) -> str:
+    if not _bq_tesseract or not _BqImage or not data:
+        return ""
+    try:
+        img = _BqImage.open(io.BytesIO(data))
+        return (_bq_tesseract.image_to_string(img) or "").strip()
+    except Exception:
+        return ""
+
+
+def _bq_case_key_from_text(text: str) -> str:
+    text = text or ""
+    m = CRUSHER_CASE_RE.search(text)
+    if m:
+        return re.sub(r"\s+", "", m.group(1).upper())
+    m2 = re.search(r"\b(26P\d+)\b", text, re.I)
+    if m2:
+        return m2.group(1).upper()
+    m3 = re.search(r"\b(PR\d{4}-\d+)\b", text, re.I)
+    if m3:
+        return m3.group(1).upper()
+    for pat in _BQ_DECEDENT_RE:
+        dm = pat.search(text)
+        if dm:
+            slug = re.sub(r"[^A-Za-z0-9]+", "_", dm.group(1).strip().lower())[:40]
+            if slug:
+                return f"EST_{slug}"
+    return ""
+
+
+def _bq_group_page_texts(pages: list) -> list:
+    groups = []
+    current = []
+    current_key = None
+    for text in pages:
+        text = (text or "").strip()
+        if not text:
+            continue
+        key = _bq_case_key_from_text(text)
+        if key and current_key and key != current_key:
+            groups.append("\n\n--- PAGE ---\n\n".join(current))
+            current = [text]
+            current_key = key
+        else:
+            if key:
+                current_key = key
+            current.append(text)
+    if current:
+        groups.append("\n\n--- PAGE ---\n\n".join(current))
+    return groups
+
+
+def _bq_split_case_chunks(text: str, davidson_fast: bool) -> list:
+    text = (text or "").strip()
+    if not text:
+        return []
+    chunks = _split_estate_chunks(text)
+    if davidson_fast:
+        expanded = []
+        for chunk in chunks:
+            parts = re.split(r"(?=\bPR\s*20\d{2}\s*[-–—]\s*\d+\b)", chunk, flags=re.I)
+            expanded.extend([p.strip() for p in parts if p.strip()])
+        if expanded:
+            chunks = expanded
+    return [c for c in chunks if c.strip()]
+
+
+def _bq_parse_davidson_case(text: str, davidson_fast: bool = False) -> dict:
+    parsed = dict(parse_lead_enhanced(text))
+    if davidson_fast or _BQ_DAVIDSON_RE.search(text):
+        parsed["county"] = "Davidson County"
+        for pat in _BQ_DECEDENT_RE:
+            dm = pat.search(text)
+            if dm:
+                name = dm.group(1).strip().rstrip(",.")
+                if name and name.lower() not in ("the", "unknown"):
+                    parsed["decedent"] = name
+                    break
+        hm = _BQ_HEIR_BLOCK_RE.search(text)
+        if hm and not parsed.get("heirs"):
+            parsed["heirs"] = hm.group(1).strip()[:200]
+        if _BQ_RE_PROPERTY_RE.search(text):
+            parsed["has_real_estate"] = True
+        if not parsed.get("contact_name"):
+            for pr_pat in (
+                CRUSHER_PR_LINE_RE,
+                re.compile(
+                    r"(?:personal\s+representative|executor|administrator|petitioner)"
+                    r"[:\s]+([A-Z][^\n,;]{2,70})",
+                    re.I,
+                ),
+            ):
+                pm = pr_pat.search(text)
+                if pm:
+                    parsed["contact_name"] = pm.group(1).strip()
+                    parsed["contact_role"] = "Personal Representative"
+                    if not parsed.get("heirs"):
+                        parsed["heirs"] = f"{parsed['contact_name']} (Personal Representative)"
+                    break
+    death_dt = extract_death_date(text)
+    if death_dt:
+        parsed["death_date_iso"] = death_dt.strftime("%Y-%m-%d")
+        if not parsed.get("filing_date"):
+            parsed["filing_date"] = parsed["death_date_iso"]
+    parsed["raw"] = text
+    return parsed
+
+
+def _bq_poc_display(parsed: dict) -> str:
+    stub = {
+        "contact_name": parsed.get("contact_name"),
+        "heirs": parsed.get("heirs"),
+        "phone": parsed.get("phone"),
+        "email": parsed.get("email"),
+        "raw": parsed.get("raw", ""),
+        "notes": [],
+    }
+    return _lead_primary_contact_line_md(stub)
+
+
+def _bq_qualify_parsed(parsed: dict) -> dict:
+    scored = score_vacant_lead(parsed)
+    score = int(scored.get("score") or 0)
+    vacant = bool(scored.get("vacant_likely"))
+    flags = scored.get("flags") or []
+    if parsed.get("has_real_estate"):
+        score = min(100, score + 8)
+        flags = list(flags) + ["✓ Real estate mentioned"]
+    if vacant or score >= 65:
+        tier = "🔥 HOT"
+        reason = scored.get("vacant_label") if vacant and scored.get("vacant_label") != "—" else (
+            " · ".join(flags[:2]) if flags else "Strong property + contact signals"
+        )
+    elif score >= 40:
+        tier = "🔥 Warm"
+        reason = " · ".join(flags[:2]) if flags else "Partial case data — review & call"
+    else:
+        tier = "Skip"
+        reason = "Missing address or too little contact data"
+    death_filing = parsed.get("filing_date") or parsed.get("death_date_iso") or "—"
+    return {
+        "parsed": parsed,
+        "case_number": parsed.get("case_number") or "—",
+        "decedent": parsed.get("decedent") or "Unknown Decedent",
+        "poc_display": _bq_poc_display(parsed),
+        "address": parsed.get("address") or "Address TBD",
+        "death_filing": death_filing,
+        "tier": tier,
+        "reason": reason[:120],
+        "score": score,
+        "sort_rank": {"🔥 HOT": 3, "🔥 Warm": 2, "Skip": 1}.get(tier, 0),
+        "vacant_likely": vacant,
+        "scored": scored,
+        "raw": parsed.get("raw", ""),
+    }
+
+
+def _bq_google_doc_text(row: dict) -> str:
+    p = row.get("parsed") or {}
+    poc = _bq_poc_display(p).replace("**", "")
+    return (
+        f"CASE: {row.get('case_number', '—')}\n"
+        f"DECEDENT: {row.get('decedent', '—')}\n"
+        f"PRIMARY CONTACT: {poc}\n"
+        f"PROPERTY: {row.get('address', '—')}\n"
+        f"COUNTY: {p.get('county', 'Middle TN')}\n"
+        f"DEATH / FILING: {row.get('death_filing', '—')}\n"
+        f"SCORE: {row.get('tier', '—')} — {row.get('reason', '')}\n"
+        f"PR ADDRESS: {p.get('pr_address') or '—'}\n"
+        f"HEIRS: {p.get('heirs') or '—'}\n"
+        f"---\n"
+        f"{(row.get('raw') or '')[:1200]}"
+    ).strip()
+
+
+def _bq_analyze_inputs(paste: str, uploads: list, davidson_fast: bool) -> list:
+    page_texts = []
+    if paste.strip():
+        page_texts.append(paste.strip())
+    for upl in uploads or []:
+        data = upl.getvalue()
+        name = (upl.name or "").lower()
+        if name.endswith(".pdf"):
+            extracted = _bq_extract_pdf_text(data)
+            if extracted:
+                page_texts.append(extracted)
+        elif name.endswith((".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp")):
+            extracted = _bq_extract_image_text(data)
+            if extracted:
+                page_texts.append(extracted)
+    if not page_texts:
+        return []
+    grouped = _bq_group_page_texts(page_texts)
+    case_chunks = []
+    for blob in grouped:
+        case_chunks.extend(_bq_split_case_chunks(blob, davidson_fast))
+    results = []
+    seen = set()
+    for chunk in case_chunks:
+        parsed = _bq_parse_davidson_case(chunk, davidson_fast)
+        if parsed.get("decedent") == "Unknown Decedent" and parsed.get("address") == "Address TBD":
+            continue
+        key = (
+            (parsed.get("case_number") or "").upper(),
+            (parsed.get("decedent") or "").lower(),
+            (parsed.get("address") or "").lower(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        row = _bq_qualify_parsed(parsed)
+        row["google_doc"] = _bq_google_doc_text(row)
+        row["status"] = "Ready"
+        results.append(row)
+    results.sort(key=lambda r: (-r["sort_rank"], -r["score"], r.get("decedent", "")))
+    return results
+
+
+def _bq_push_row_to_branton(row: dict) -> bool:
+    if row.get("tier") != "🔥 HOT" or row.get("status") == "Queued":
+        return False
+    parsed = dict(row.get("parsed") or {})
+    parsed["raw"] = row.get("raw") or parsed.get("raw", "")
+    heat_status, heat_pipeline = heat_from_import_block(parsed.get("raw", ""))
+    if row.get("vacant_likely"):
+        heat_pipeline = "🔥 Hot / New (call today)"
+        heat_status = "New/Hot"
+    scored = row.get("scored") or {}
+    flags_txt = " · ".join(scored.get("flags") or [])
+    notes_blob = (
+        f"Bulk Qualifier • {row.get('tier')}\n"
+        f"{row.get('reason')}\n\n"
+        f"{parsed.get('raw', '')}\n\n"
+        f"Phone: {parsed.get('phone') or '—'}\n{flags_txt}"
+    ).strip()
+    st.session_state.leads.insert(
+        0,
+        build_lead(
+            parsed,
+            pipeline_stage=heat_pipeline,
+            status=heat_status,
+            score=row.get("score", 75),
+            source="bulk_qualifier",
+            assigned_to_branton=True,
+            follow_up_days=0,
+            notes=initial_notes_from_block(notes_blob, source="Bulk Qualifier"),
+        ),
+    )
+    row["status"] = "Queued"
+    return True
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — Add New Leads (Bulk Qualifier)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_add_leads:
-    st.subheader("Bulk Qualifier")
-    st.caption("Paste raw county export data — petitions, heir info, addresses. We'll parse and qualify.")
+    st.session_state.setdefault("bq_results", [])
+    st.session_state.setdefault("bq_pushed_flash", None)
+
+    st.markdown(
+        """
+        <style>
+        .bq-hero {
+            background: linear-gradient(135deg, #0d2818 0%, #161b22 55%, #1a2332 100%);
+            border: 1px solid #238636;
+            border-radius: 14px;
+            padding: 1rem 1.1rem;
+            margin-bottom: 0.85rem;
+        }
+        .bq-hero h3 { margin: 0 0 0.35rem 0; color: #e6edf3; font-size: 1.15rem; }
+        .bq-hero p { margin: 0; color: #8b949e; font-size: 0.88rem; line-height: 1.5; }
+        .bq-drop-hint {
+            background: #161b22;
+            border: 2px dashed #3fb950;
+            border-radius: 12px;
+            padding: 0.75rem 0.9rem;
+            margin-bottom: 0.65rem;
+            font-size: 0.86rem;
+            color: #8b949e;
+            line-height: 1.45;
+        }
+        .bq-btn-green-marker { display: none; }
+        .bq-btn-green-marker + div[data-testid="stButton"] > button {
+            background: linear-gradient(135deg, #0d2818 0%, #238636 45%, #2ea043 100%) !important;
+            border: 2px solid #3fb950 !important;
+            color: #fff !important;
+            font-weight: 800 !important;
+            font-size: 1.08rem !important;
+            min-height: 3.4rem !important;
+        }
+        .bq-poc-name { font-weight: 900 !important; color: #ffffff !important; }
+        .bq-row-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 0.65rem 0.75rem;
+            margin-bottom: 0.55rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="bq-hero">'
+        "<h3>📋 Bulk Qualifier — Davidson County Destroyer</h3>"
+        "<p>Drop 10–20 Caselink PDFs or screenshot pages, paste raw exports, "
+        "qualify in seconds, one-click push 🔥 HOT cases to Branton.</p></div>",
+        unsafe_allow_html=True,
+    )
+
+    davidson_fast = st.toggle(
+        "⚡ Davidson Fast Mode",
+        value=st.session_state.get("bq_davidson_fast", True),
+        help="Optimized for 4–6 page Davidson petitions — merges pages, extracts decedent, heirs, RE, executor.",
+        key="bq_davidson_fast",
+    )
+
+    st.markdown(
+        '<div class="bq-drop-hint">'
+        "<b>Drag &amp; drop zone</b> — upload multiple screenshots (4–6 pages per case), "
+        "one multi-page Caselink PDF, or mix with pasted text below.</div>",
+        unsafe_allow_html=True,
+    )
+    bq_uploads = st.file_uploader(
+        "Drop cases here",
+        type=["pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp"],
+        accept_multiple_files=True,
+        key="bq_file_drop",
+        label_visibility="collapsed",
+    )
+
+    bulk_raw = st.text_area(
+        "Raw County Data",
+        height=220,
+        placeholder=(
+            "Or paste raw text — court exports, CaseLink copy, pipe rows…\n\n"
+            "Estate of Robert Smith, deceased\n"
+            "PR 2024-0142\n"
+            "4521 Main St, Nashville, TN 37214\n"
+            "Davidson County\n"
+            "Personal Representative: Jane Smith\n"
+            "(615) 555-1212 · jane@email.com\n\n"
+            "Separate multiple cases with blank lines…"
+        ),
+        key="bulk_data",
+    )
+
+    if st.session_state.pop("bq_pushed_flash", None):
+        st.success(st.session_state.pop("_bq_last_push_msg", "🔥 Lead pushed to Branton's HOT queue."))
+        st.balloons()
 
     bulk_flash = st.session_state.pop("bulk_qualify_flash", None)
     if bulk_flash:
         st.success(bulk_flash)
 
-    bulk_raw = st.text_area(
-        "Raw County Data",
-        height=280,
-        placeholder=(
-            "Paste multiple leads separated by blank lines...\n\n"
-            "Estate of Robert Smith\n"
-            "4521 Main St, Lebanon, TN 37087\n"
-            "Wilson County\n\n"
-            "Estate of Linda Davis\n"
-            "890 Heritage Dr, Murfreesboro, TN 37129\n"
-            "Rutherford County"
-        ),
-        key="bulk_data",
-    )
-
-    if st.button("Analyze & Qualify Leads", use_container_width=True, type="primary"):
-        if not bulk_raw.strip():
-            st.warning("Paste raw county data first.")
+    st.markdown('<div class="bq-btn-green-marker"></div>', unsafe_allow_html=True)
+    if st.button("🔥 Analyze All Cases & Qualify", use_container_width=True, type="primary", key="bq_analyze_all"):
+        has_uploads = bool(bq_uploads)
+        has_paste = bool(bulk_raw.strip())
+        if not has_uploads and not has_paste:
+            st.warning("Drop PDFs/screenshots or paste raw county data first.")
         else:
-            blocks = [b.strip() for b in re.split(r"\n\s*\n", bulk_raw.strip()) if b.strip()]
-            qualified_count = 0
-
-            for block in blocks:
-                parsed = parse_lead(block)
-                score, status, flags = score_lead(parsed)
-
-                if status == "Qualified":
-                    qualified_count += 1
-                    parsed["raw"] = block
-                    heat_status, heat_pipeline = heat_from_import_block(block)
-                    st.session_state.leads.insert(0, build_lead(
-                        parsed,
-                        pipeline_stage=heat_pipeline,
-                        status=heat_status,
-                        score=score,
-                        source="bulk",
-                        follow_up_days=1,
-                        notes=initial_notes_from_block(block, source="Bulk Qualifier"),
-                    ))
-
-            persist_leads()
-            st.session_state.bulk_qualify_flash = (
-                f"✅ Analysis complete — **{qualified_count} of {len(blocks)}** leads qualified "
-                f"and synced to Dashboard · **{len(st.session_state.leads)}** total leads."
-            )
+            results = _bq_analyze_inputs(bulk_raw, bq_uploads or [], davidson_fast)
+            st.session_state.bq_results = results
+            hot_n = sum(1 for r in results if r.get("tier") == "🔥 HOT")
+            warm_n = sum(1 for r in results if r.get("tier") == "🔥 Warm")
+            if results:
+                st.session_state.bulk_qualify_flash = (
+                    f"🔥 **{len(results)}** cases analyzed — **{hot_n}** HOT · **{warm_n}** Warm "
+                    f"(sorted HOT first)"
+                )
+            else:
+                st.session_state.bulk_qualify_flash = (
+                    "No cases parsed — try Davidson Fast Mode, a clearer PDF, or paste the petition text."
+                )
             st.rerun()
+
+    bq_results = st.session_state.get("bq_results", [])
+    if bq_results:
+        hot_n = sum(1 for r in bq_results if r.get("tier") == "🔥 HOT")
+        warm_n = sum(1 for r in bq_results if r.get("tier") == "🔥 Warm")
+        st.markdown(f"**Results** — {len(bq_results)} cases · **{hot_n}** HOT · **{warm_n}** Warm")
+
+        for idx, row in enumerate(bq_results):
+            tier = row.get("tier", "Skip")
+            tier_color = "#3fb950" if tier == "🔥 HOT" else ("#d29922" if tier == "🔥 Warm" else "#8b949e")
+            st.markdown(
+                f'<div class="bq-row-card">'
+                f'<span style="color:{tier_color};font-weight:800;">{html.escape(tier)}</span>'
+                f' · <b>{html.escape(row.get("case_number", "—"))}</b>'
+                f' · {html.escape(row.get("decedent", "—"))}'
+                f"</div>",
+                unsafe_allow_html=True,
+            )
+            st.markdown(f"### {row.get('poc_display', '**Contact TBD**')}")
+
+            tbl = st.data_editor(
+                [{
+                    "Property Address": row.get("address", "—"),
+                    "Death/Filing Date": row.get("death_filing", "—"),
+                    "Score Reason": f"{tier} — {row.get('reason', '')}",
+                    "Status": row.get("status", "Ready"),
+                }],
+                column_config={
+                    "Property Address": st.column_config.TextColumn("Property Address", disabled=True),
+                    "Death/Filing Date": st.column_config.TextColumn("Death/Filing Date", disabled=True),
+                    "Score Reason": st.column_config.TextColumn("Score + Reason", disabled=True),
+                    "Status": st.column_config.TextColumn("Status", disabled=True),
+                },
+                disabled=["Property Address", "Death/Filing Date", "Score Reason", "Status"],
+                hide_index=True,
+                use_container_width=True,
+                key=f"bq_row_tbl_{idx}",
+            )
+
+            with st.expander("📄 Ready Google Doc text — copy", expanded=False):
+                st.code(row.get("google_doc", ""), language="text")
+
+            if tier == "🔥 HOT" and row.get("status") != "Queued":
+                if st.button(
+                    "✅ Push to Branton's HOT Queue",
+                    key=f"bq_push_{idx}",
+                    use_container_width=True,
+                    type="primary",
+                ):
+                    if _bq_push_row_to_branton(row):
+                        persist_leads()
+                        st.session_state.bq_results = bq_results
+                        st.session_state.bq_pushed_flash = True
+                        st.session_state._bq_last_push_msg = (
+                            f"🔥 **{row.get('decedent')}** pushed to {PARTNER_NAME}'s HOT queue — "
+                            "Dashboard → Branton Call Mode."
+                        )
+                        st.rerun()
+            elif row.get("status") == "Queued":
+                st.caption("✅ Queued on Dashboard")
+            else:
+                st.caption("Warm/Skip — review Google Doc text; only 🔥 HOT rows push to queue.")
+
+            st.markdown("---")
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — Dashboard / CRM (default)
