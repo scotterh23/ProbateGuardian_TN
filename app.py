@@ -4493,7 +4493,19 @@ _NS_ASSESSORS = {
     "Rutherford County": "https://rcpatn.com/",
     "Robertson County": "https://www.assessment.cot.tn.gov/RE_Assessment/",
     "Cheatham County": "https://www.assessment.cot.tn.gov/RE_Assessment/",
+    "Davidson County": "https://www.padctn.org/real-property-search/",
+    "Williamson County": "https://inigo.williamson-tn.org/property_search/",
 }
+try:
+    from pypdf import PdfReader as _NsPdfReader
+except ImportError:
+    _NsPdfReader = None
+try:
+    import pytesseract as _ns_tesseract
+    from PIL import Image as _NsImage
+except ImportError:
+    _ns_tesseract = None
+    _NsImage = None
 _NS_COUNTY_CITIES = {
     "gallatin": "Sumner County",
     "hendersonville": "Sumner County",
@@ -4751,8 +4763,9 @@ def _ns_parse_block(block: str) -> dict:
     prop_like, prop_reason = _ns_likely_property(decedent, county, block, address_clue)
     assessor_urls = {
         ck: _ns_assessor_owner_search(ck, decedent, address_clue)
-        for ck in ("Sumner County", "Wilson County", "Rutherford County")
+        for ck in _NS_ASSESSORS
     }
+    tax_record_url = _ns_assessor_owner_search(county, decedent, address_clue)
     return {
         "decedent": decedent,
         "date": date,
@@ -4765,6 +4778,7 @@ def _ns_parse_block(block: str) -> dict:
         "phone_search_string": _ns_bv_search_string(decedent, county, pr_heir),
         "tax_search_string": _ns_tax_search_string(decedent, county),
         "assessor_urls": assessor_urls,
+        "tax_record_url": tax_record_url,
         "status": "Ready",
         "raw": block,
         "county": county,
@@ -4870,6 +4884,128 @@ def _ns_push_qualified_to_queue(results: list, selected: list = None) -> int:
 _ns_push_high_to_queue = _ns_push_qualified_to_queue
 
 
+def _ns_extract_pdf_text(data: bytes) -> str:
+    if not _NsPdfReader or not data:
+        return ""
+    try:
+        reader = _NsPdfReader(io.BytesIO(data))
+        return "\n\n".join((p.extract_text() or "") for p in reader.pages).strip()
+    except Exception:
+        return ""
+
+
+def _ns_extract_image_text(data: bytes) -> str:
+    if not _ns_tesseract or not _NsImage or not data:
+        return ""
+    try:
+        img = _NsImage.open(io.BytesIO(data))
+        return (_ns_tesseract.image_to_string(img) or "").strip()
+    except Exception:
+        return ""
+
+
+def _ns_ingest_uploads(uploads: list) -> str:
+    chunks = []
+    for upl in uploads or []:
+        data = upl.getvalue()
+        name = (upl.name or "").lower()
+        if name.endswith(".pdf"):
+            text = _ns_extract_pdf_text(data)
+        elif name.endswith((".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp")):
+            text = _ns_extract_image_text(data)
+        else:
+            text = ""
+        if text:
+            chunks.append(text)
+    return "\n\n--- FILE ---\n\n".join(chunks)
+
+
+def _ns_analyze_inputs(paste: str, uploads: list) -> list:
+    parts = []
+    if (paste or "").strip():
+        parts.append(paste.strip())
+    upload_text = _ns_ingest_uploads(uploads)
+    if upload_text:
+        parts.append(upload_text)
+    combined = "\n\n".join(parts).strip()
+    return _ns_analyze_text(combined) if combined else []
+
+
+def _ns_hermes_agent_json(row: dict) -> str:
+    payload = {
+        "agent": "Hermes",
+        "task": "qualify_and_skip_trace",
+        "decedent": row.get("decedent"),
+        "county": row.get("county"),
+        "property_likelihood": row.get("property_likelihood"),
+        "tax_search": row.get("tax_search_string"),
+        "bv_search": row.get("phone_search_string"),
+        "assessor_urls": row.get("assessor_urls"),
+        "raw": (row.get("raw") or "")[:800],
+    }
+    return json.dumps(payload, indent=2, ensure_ascii=False)
+
+
+def _empire_scale_content() -> dict:
+    return {
+        "recruitment_script": f"""eXp PROBATE RECRUITMENT SCRIPT — {PARTNER_NAME} TEAM
+
+OPEN: "We're building the #1 probate machine in Middle Tennessee — $500K–$2M+ per agent path."
+
+PITCH:
+• Licensed CRM + daily HOT leads (we scrape & qualify)
+• Aaron Novello / Rick Yen training library built in
+• Branton-model call queue — you call, we coordinate vendors + attorney loop
+• 50+ agent vision — team splits on every closing
+
+ASK: "Want 10 HOT probate leads in your queue this week — free trial on our system?"
+
+CLOSE: Schedule 15-min onboarding · assign county · first call blitz Friday""",
+        "white_label_plan": """WHITE-LABEL CRM — $197–$497/mo + REV SHARE
+
+TIER 1 ($197/mo): Newspaper Scraper + Bulk Qualifier + Call Queue
+TIER 2 ($297/mo): + 90-Day Crusher + AI Agent Pipeline + Partner Kit
+TIER 3 ($497/mo): + White-label domain · custom county pack · rev share on closings
+
+STACK: Streamlit Cloud host · leads JSON per broker · Hermes agent export
+MOAT: TN county assessor one-clicks · Caselink PDF ingest · Branton playbook
+
+TARGET: 100 brokers Year 1 · $30K MRR at 100×$297""",
+        "jv_outreach": """ASSISTED LIVING / HOSPICE JV — Aubrey Preston Pipeline
+
+SUBJECT: Property Resource Partner for Your Families — No Cost to Facility
+
+Dear [Executive Director / Community Relations],
+
+When a resident passes, families ask one question first: "What do we do with the house?"
+
+ProbateGuardian provides:
+• Free Guardian Kit (vendors, Net Sheet, timeline map)
+• Compassion-first heir outreach — never pressure
+• Court-coordinated listing path when family is ready
+
+JV MODEL: Referral fee / marketing partnership · co-branded workshops
+ASK: 30-min lunch with your social work director · pilot 90 days
+
+Scott Hardesty · {DEDICATED_PHONE_LINE}""".format(DEDICATED_PHONE_LINE=DEDICATED_PHONE_LINE),
+    }
+
+
+# ── AI Agent Pipeline tab helpers (isolated — used only by tab_ai_agent) ──────
+def _ai_agent_daily_summary(results: list) -> str:
+    qual = sum(1 for r in results if _ns_is_qualified(r))
+    return (
+        f"DAILY AI AGENT SUMMARY — {datetime.now().strftime('%A %B %d, %Y')}\n\n"
+        f"Scott + {PARTNER_NAME} — ProbateGuardian Empire Mode\n\n"
+        f"• Names scraped/qualified today: {len(results)}\n"
+        f"• 🔥 Qualified (HOT): {qual}\n"
+        f"• Pushed to Branton queue: {sum(1 for r in results if r.get('status') == 'Queued')}\n\n"
+        f"NEXT: Branton hits Call Mode → 3-touch minimum → Guardian Kits on appts\n"
+        f"GOAL PATH: 100+ qualified/day → 8–15 closes/mo → recruit 50 eXp agents → license CRM\n\n"
+        f"Text {DEDICATED_PHONE} when queue is loaded."
+    )
+
+
 # ── Header ───────────────────────────────────────────────────────────────────
 st.markdown('<p class="hero-title">🏠 ProbateGuardian Free TN</p>', unsafe_allow_html=True)
 st.markdown(
@@ -4878,11 +5014,12 @@ st.markdown(
 )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab_dashboard, tab_crusher, tab_add_leads, tab_newspaper, tab_outreach, tab_partner, tab_vendors, tab_training, tab_hospice = st.tabs([
+tab_dashboard, tab_crusher, tab_add_leads, tab_newspaper, tab_ai_agent, tab_outreach, tab_partner, tab_vendors, tab_training, tab_hospice = st.tabs([
     "Dashboard",
     "💰 90-Day Probate Crusher",
     "Add New Leads",
-    "📰 Newspaper Scraper • Small Counties",
+    "📰 Newspaper Scraper • Small County Beast",
+    "🚀 AI Agent Pipeline",
     "Generate Outreach",
     "📘 Partner Kit",
     "🛠️ Vendors Rolodex",
@@ -6888,12 +7025,14 @@ You never have to figure out the hard stuff alone.""",
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB — Newspaper Scraper • Small Counties (isolated)
+# TAB — Newspaper Scraper • Small County Beast (isolated)
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_newspaper:
     st.session_state.setdefault("ns_scraper_raw", "")
     st.session_state.setdefault("ns_scraper_results", [])
     st.session_state.setdefault("ns_pipeline_ran", False)
+    st.session_state.setdefault("ns_empire_visible", False)
+    st.session_state.setdefault("ns_hermes_row", None)
 
     st.markdown(
         """
@@ -6909,28 +7048,27 @@ with tab_newspaper:
             color: #aff5b4;
             text-align: center;
         }
-        .ns-hero {
-            background: linear-gradient(135deg, #0d2818 0%, #161b22 55%, #1a2332 100%);
-            border: 1px solid #238636;
-            border-radius: 14px;
-            padding: 1rem 1.1rem;
-            margin-bottom: 0.8rem;
-        }
-        .ns-hero h3 { margin: 0 0 0.35rem 0; color: #e6edf3; font-size: 1.15rem; }
-        .ns-hero p { margin: 0; color: #8b949e; font-size: 0.88rem; line-height: 1.5; }
-        .ns-paste-shell {
+        .ns-drop-zone {
             background: #161b22;
-            border: 2px solid #3fb950;
-            border-radius: 12px;
-            padding: 1rem 1.05rem;
-            margin-bottom: 0.7rem;
-            box-shadow: 0 0 18px rgba(63, 185, 80, 0.15);
-        }
-        .ns-paste-title {
-            font-size: 1rem;
-            font-weight: 800;
+            border: 2px dashed #3fb950;
+            border-radius: 14px;
+            padding: 0.85rem 1rem;
+            margin-bottom: 0.75rem;
+            font-size: 0.92rem;
+            font-weight: 700;
             color: #e6edf3;
-            margin-bottom: 0.45rem;
+            text-align: center;
+            box-shadow: 0 0 22px rgba(63, 185, 80, 0.18);
+        }
+        .ns-btn-monster-marker { display: none; }
+        .ns-btn-monster-marker + div[data-testid="stButton"] > button {
+            background: linear-gradient(135deg, #3d1f00 0%, #238636 40%, #2ea043 100%) !important;
+            border: 3px solid #f0b429 !important;
+            color: #fff !important;
+            font-weight: 900 !important;
+            font-size: 1.12rem !important;
+            min-height: 4rem !important;
+            box-shadow: 0 8px 28px rgba(46, 160, 67, 0.55) !important;
         }
         .ns-btn-green-marker { display: none; }
         .ns-btn-green-marker + div[data-testid="stButton"] > button {
@@ -6938,33 +7076,12 @@ with tab_newspaper:
             border: 2px solid #3fb950 !important;
             color: #fff !important;
             font-weight: 800 !important;
-            font-size: 1.08rem !important;
-            min-height: 3.5rem !important;
+            min-height: 3.2rem !important;
         }
-        .ns-row-card {
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 0.75rem 0.85rem;
-            margin-bottom: 0.65rem;
-        }
-        .ns-row-name {
-            font-size: 1.15rem;
-            font-weight: 900;
-            color: #ffffff;
-            margin: 0 0 0.25rem 0;
-        }
-        .ns-stats {
-            display: flex; flex-wrap: wrap; gap: 0.5rem;
-            margin: 0.55rem 0 0.75rem 0;
-        }
+        .ns-stats { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.55rem 0 0.75rem 0; }
         .ns-stat {
-            flex: 1 1 5.5rem;
-            background: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 10px;
-            padding: 0.5rem 0.65rem;
-            text-align: center;
+            flex: 1 1 5rem; background: #161b22; border: 1px solid #30363d;
+            border-radius: 10px; padding: 0.5rem 0.65rem; text-align: center;
         }
         .ns-stat b { display: block; font-size: 1.15rem; color: #e6edf3; }
         .ns-stat span { font-size: 0.68rem; color: #8b949e; text-transform: uppercase; }
@@ -6977,59 +7094,55 @@ with tab_newspaper:
         '<div class="ns-checklist">Davidson done ✓ → Now crushing Sumner / Wilson / Rutherford</div>',
         unsafe_allow_html=True,
     )
-
     st.markdown(
-        '<div class="ns-hero">'
-        "<h3>📰 Newspaper Scraper • Small County Beast</h3>"
-        "<p>Paste 20 names in 10 seconds · one-click assessor searches · qualify in under 30 sec per lead · "
-        f"push 🔥 qualified to {PARTNER_NAME}'s HOT queue.</p></div>",
+        '<div class="ns-drop-zone">'
+        "Drop 1–20 Caselink PDFs, screenshot batches, or full newspaper PDFs — or paste raw notices below"
+        "</div>",
         unsafe_allow_html=True,
     )
 
-    ns_top1, ns_top2, ns_top3 = st.columns([2, 1, 1])
-    with ns_top1:
-        st.link_button("tnpublicnotice.com", _NS_LINKS["tnpublicnotice.com"], use_container_width=True)
-    with ns_top2:
-        st.link_button("Robertson Assessor", _NS_ASSESSORS["Robertson County"], use_container_width=True)
-    with ns_top3:
-        st.link_button("Cheatham Assessor", _NS_ASSESSORS["Cheatham County"], use_container_width=True)
-
-    st.markdown('<div class="ns-paste-shell">', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="ns-paste-title">Paste today\'s new probate names from tnpublicnotice.com or newspaper</div>',
-        unsafe_allow_html=True,
+    ns_uploads = st.file_uploader(
+        "Drop zone",
+        type=["pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp"],
+        accept_multiple_files=True,
+        key="ns_beast_drop",
+        label_visibility="collapsed",
     )
+
+    st.link_button("tnpublicnotice.com", _NS_LINKS["tnpublicnotice.com"], use_container_width=True)
+
     ns_raw = st.text_area(
-        "Newspaper scraper paste",
+        "Paste raw notices",
         value=st.session_state.get("ns_scraper_raw", ""),
-        height=400,
-        placeholder=(
-            "One name per line — or full notice blocks:\n\n"
-            "Estate of Mary Jane Thompson\n"
-            "William R. Davis — Hendersonville\n"
-            "Robert Smith — Wilson County\n"
-            "Jennifer Street — Murfreesboro\n\n"
-            "Or paste full Notice to Creditors with addresses…"
-        ),
+        height=320,
+        placeholder="Estate of Mary Jane Thompson\nWilliam R. Davis — Hendersonville\nRobert Smith — Wilson County…",
         key="ns_scraper_paste",
         label_visibility="collapsed",
     )
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown('<div class="ns-btn-green-marker"></div>', unsafe_allow_html=True)
+    st.markdown('<div class="ns-btn-monster-marker"></div>', unsafe_allow_html=True)
     if st.button(
-        "🔍 Generate Assessor Search Links + Qualify",
+        "🔥 Scrape + Qualify + Generate All Assessor Links + Push HOT to Branton",
         use_container_width=True,
         type="primary",
-        key="ns_analyze_btn",
+        key="ns_monster_btn",
     ):
-        if not ns_raw.strip():
-            st.error("Paste probate names or notices first.")
+        if not ns_raw.strip() and not ns_uploads:
+            st.error("Drop PDFs/screenshots or paste notices first.")
         else:
             st.session_state.ns_scraper_raw = ns_raw
-            st.session_state.ns_scraper_results = _ns_analyze_text(ns_raw)
+            results = _ns_analyze_inputs(ns_raw, ns_uploads or [])
+            st.session_state.ns_scraper_results = results
             st.session_state.ns_pipeline_ran = True
-            st.session_state.pop("ns_push_flash", None)
+            pushed = _ns_push_qualified_to_queue(results) if results else 0
+            st.session_state.ns_scraper_results = results
+            if results:
+                st.session_state.ns_push_flash = (
+                    f"🔥 Beast run complete — **{len(results)}** qualified · "
+                    f"**{pushed}** pushed to {PARTNER_NAME}'s HOT queue."
+                )
+            else:
+                st.warning("No names extracted — try clearer PDFs or paste names one per line.")
             st.rerun()
 
     if st.session_state.get("ns_push_flash"):
@@ -7039,119 +7152,187 @@ with tab_newspaper:
     ns_results = st.session_state.get("ns_scraper_results", [])
     if ns_results:
         ns_qual_n = sum(1 for r in ns_results if _ns_is_qualified(r))
-        ns_maybe_n = sum(1 for r in ns_results if r.get("property_likelihood", "").startswith("●"))
-        ns_queued_n = sum(1 for r in ns_results if r.get("status") == "Queued")
-
         st.markdown(
             f'<div class="ns-stats">'
-            f'<div class="ns-stat"><b>{len(ns_results)}</b><span>Names</span></div>'
+            f'<div class="ns-stat"><b>{len(ns_results)}</b><span>Leads</span></div>'
             f'<div class="ns-stat"><b style="color:#3fb950">{ns_qual_n}</b><span>Qualified</span></div>'
-            f'<div class="ns-stat"><b style="color:#d29922">{ns_maybe_n}</b><span>Maybe</span></div>'
-            f'<div class="ns-stat"><b style="color:#58a6ff">{ns_queued_n}</b><span>Queued</span></div>'
+            f'<div class="ns-stat"><b style="color:#58a6ff">'
+            f'{sum(1 for r in ns_results if r.get("status") == "Queued")}</b><span>Queued</span></div>'
             f"</div>",
             unsafe_allow_html=True,
         )
-
-        ns_editor_rows = [
-            {
-                "Decedent": row.get("decedent", ""),
-                "County": row.get("county", "—"),
-                "Likely Property": f"{row.get('property_likelihood', '—')} — {row.get('property_reason', '')}",
-                "BV Search": row.get("phone_search_string", ""),
-                "Tax Search": row.get("tax_search_string", ""),
-                "Status": row.get("status", "Ready"),
-            }
-            for row in ns_results
-        ]
         st.data_editor(
-            ns_editor_rows,
+            [{
+                "Decedent": r.get("decedent", ""),
+                "County": r.get("county", ""),
+                "Qualification": f"{r.get('property_likelihood', '')} — {r.get('property_reason', '')}",
+                "BV / Tax": f"{r.get('phone_search_string', '')} | {r.get('tax_search_string', '')}",
+                "Status": r.get("status", "Ready"),
+            } for r in ns_results],
             column_config={
-                "Decedent": st.column_config.TextColumn("Decedent", width="medium", disabled=True),
-                "County": st.column_config.TextColumn("County", width="small", disabled=True),
-                "Likely Property": st.column_config.TextColumn("Likely has property", width="large", disabled=True),
-                "BV Search": st.column_config.TextColumn("BeenVerified string", width="medium", disabled=True),
-                "Tax Search": st.column_config.TextColumn("Tax records string", width="medium", disabled=True),
-                "Status": st.column_config.TextColumn("Status", width="small", disabled=True),
+                "Decedent": st.column_config.TextColumn("Decedent", disabled=True),
+                "County": st.column_config.TextColumn("County", disabled=True),
+                "Qualification": st.column_config.TextColumn("Qualification", disabled=True),
+                "BV / Tax": st.column_config.TextColumn("BV / Tax", disabled=True),
+                "Status": st.column_config.TextColumn("Status", disabled=True),
             },
-            disabled=["Decedent", "County", "Likely Property", "BV Search", "Tax Search", "Status"],
+            disabled=["Decedent", "County", "Qualification", "BV / Tax", "Status"],
             hide_index=True,
             use_container_width=True,
-            key="ns_scraper_table",
+            key="ns_beast_table",
         )
 
-        st.markdown("**Assessor one-clicks — tap county search per name**")
+        st.markdown("**Per-lead actions**")
         for idx, row in enumerate(ns_results):
             urls = row.get("assessor_urls") or {}
-            st.markdown(
-                f'<div class="ns-row-card"><p class="ns-row-name">{html.escape(row.get("decedent", ""))}</p>'
-                f'<span style="color:#8b949e;font-size:0.82rem;">'
-                f'{html.escape(row.get("county", ""))} · {html.escape(row.get("property_likelihood", ""))}'
-                f"</span></div>",
-                unsafe_allow_html=True,
-            )
-            ac1, ac2, ac3, ac4 = st.columns(4)
-            with ac1:
+            st.markdown(f"### {row.get('decedent', '')} · {row.get('county', '')}")
+            c1, c2, c3, c4, c5, c6 = st.columns(6)
+            county_cols = [
+                ("Sumner", "Sumner County"), ("Wilson", "Wilson County"),
+                ("Rutherford", "Rutherford County"), ("Robertson", "Robertson County"),
+                ("Cheatham", "Cheatham County"), ("Williamson", "Williamson County"),
+            ]
+            for col, (label, ck) in zip([c1, c2, c3, c4, c5, c6], county_cols):
+                with col:
+                    st.link_button(
+                        label,
+                        urls.get(ck) or _ns_assessor_owner_search(
+                            ck, row.get("decedent", ""), row.get("address_clue", "")
+                        ),
+                        use_container_width=True,
+                        key=f"ns_a_{idx}_{label}",
+                    )
+            act1, act2, act3 = st.columns(3)
+            with act1:
                 st.link_button(
-                    "Sumner Assessor Search",
-                    urls.get("Sumner County") or _ns_assessor_owner_search(
-                        "Sumner County", row.get("decedent", ""), row.get("address_clue", "")
+                    "Search Tax Record",
+                    row.get("tax_record_url") or _ns_assessor_owner_search(
+                        row.get("county", "Sumner County"),
+                        row.get("decedent", ""),
+                        row.get("address_clue", ""),
                     ),
                     use_container_width=True,
-                    key=f"ns_sum_{idx}",
+                    key=f"ns_tax_{idx}",
                 )
-            with ac2:
-                st.link_button(
-                    "Wilson Assessor Search",
-                    urls.get("Wilson County") or _ns_assessor_owner_search(
-                        "Wilson County", row.get("decedent", ""), row.get("address_clue", "")
-                    ),
-                    use_container_width=True,
-                    key=f"ns_wil_{idx}",
-                )
-            with ac3:
-                st.link_button(
-                    "Rutherford Assessor Search",
-                    urls.get("Rutherford County") or _ns_assessor_owner_search(
-                        "Rutherford County", row.get("decedent", ""), row.get("address_clue", "")
-                    ),
-                    use_container_width=True,
-                    key=f"ns_ruth_{idx}",
-                )
-            with ac4:
-                st.link_button(
-                    "Portal",
-                    _NS_ASSESSORS.get(row.get("county", ""), _NS_ASSESSORS["Sumner County"]),
-                    use_container_width=True,
-                    key=f"ns_portal_{idx}",
-                )
+            with act2:
+                if _ns_is_qualified(row) and row.get("status") != "Queued":
+                    if st.button("Push 🔥 HOT to Branton's Queue", key=f"ns_hot_{idx}", use_container_width=True):
+                        if _ns_push_qualified_to_queue(ns_results, [row]):
+                            st.session_state.ns_scraper_results = ns_results
+                            st.session_state.ns_push_flash = f"🔥 **{row.get('decedent')}** → HOT queue."
+                            st.rerun()
+                else:
+                    st.caption("Queued" if row.get("status") == "Queued" else "Not qualified")
+            with act3:
+                if st.button("Send to Hermes Agent", key=f"ns_hermes_{idx}", use_container_width=True):
+                    st.session_state.ns_hermes_row = idx
+            if st.session_state.get("ns_hermes_row") == idx:
+                st.code(_ns_hermes_agent_json(row), language="json")
+            st.markdown("---")
 
-        st.markdown('<div class="ns-btn-green-marker"></div>', unsafe_allow_html=True)
-        if st.button(
-            "✅ Push Qualified to Branton HOT Queue",
+    hermes_idx = st.session_state.get("ns_hermes_row")
+    if hermes_idx is not None and ns_results and hermes_idx < len(ns_results):
+        pass  # shown inline above
+
+    st.markdown("---")
+    if st.button("🌎 Scale to National Empire", use_container_width=True, key="ns_empire_btn"):
+        st.session_state.ns_empire_visible = True
+    if st.session_state.get("ns_empire_visible"):
+        empire = _empire_scale_content()
+        st.text_area("Recruitment Script (50+ eXp agents)", empire["recruitment_script"], height=200, key="ns_emp_rec")
+        st.text_area("White-Label Plan ($197–$497/mo)", empire["white_label_plan"], height=200, key="ns_emp_wl")
+        st.text_area("JV Outreach — Assisted Living", empire["jv_outreach"], height=200, key="ns_emp_jv")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — 🚀 AI Agent Pipeline (isolated)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_ai_agent:
+    st.session_state.setdefault("ai_agent_launched", False)
+    st.session_state.setdefault("ai_empire_visible", False)
+
+    st.markdown(
+        """
+        <style>
+        .ai-vision {
+            background: linear-gradient(135deg, #2d1f0f 0%, #1a1208 100%);
+            border: 2px solid #f0b429;
+            border-radius: 14px;
+            padding: 1rem 1.15rem;
+            margin-bottom: 1rem;
+            color: #ffe08a;
+            font-size: 0.9rem;
+            line-height: 1.55;
+        }
+        .ai-vision b { color: #fff; }
+        .ai-launch-marker { display: none; }
+        .ai-launch-marker + div[data-testid="stButton"] > button {
+            background: linear-gradient(135deg, #1a1f71 0%, #4f46e5 50%, #7c3aed 100%) !important;
+            border: 2px solid #a78bfa !important;
+            color: #fff !important;
+            font-weight: 900 !important;
+            font-size: 1.15rem !important;
+            min-height: 4.2rem !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        '<div class="ai-vision">'
+        "<b>Goal:</b> 100+ qualified leads/day → Branton closes 8–15/mo → "
+        "Recruit/train 50+ agents under us at eXp → License this exact CRM for "
+        "<b>$197–$497/mo + rev share</b> → JV with assisted living giants "
+        "(Aubrey Preston pipeline) → National flip fund"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown('<div class="ai-launch-marker"></div>', unsafe_allow_html=True)
+    if st.button("🚀 Launch Daily Full AI Agent", use_container_width=True, type="primary", key="ai_launch_btn"):
+        st.session_state.ai_agent_launched = True
+        st.rerun()
+
+    if st.session_state.get("ai_agent_launched"):
+        st.success("AI Agent Pipeline scaffolded — daily automation ready.")
+        ns_results = st.session_state.get("ns_scraper_results", [])
+        st.markdown("**Daily automation steps**")
+        st.markdown(
+            """
+            1. **Pull notices** — tnpublicnotice.com + Newspaper Scraper Beast tab (PDF drop)
+            2. **Qualify** — assessor one-clicks + property likelihood scoring
+            3. **Push CRM** — 🔥 HOT rows → Branton Call Mode (manual confirm per batch)
+            4. **Hermes export** — Send qualified rows to Hermes Agent for skip-trace
+            5. **Daily summary** — text Scott + Branton (template below)
+            """
+        )
+        st.code(_ai_agent_daily_summary(ns_results), language="text")
+        st.caption(
+            f"Text summary to Scott + {PARTNER_NAME}: {DEDICATED_PHONE} · "
+            "Run Beast tab first to populate live counts."
+        )
+        if ns_results and st.button(
+            f"Push today's {sum(1 for r in ns_results if _ns_is_qualified(r))} qualified → HOT queue",
+            key="ai_push_qualified",
             use_container_width=True,
-            type="primary",
-            key="ns_push_qualified_btn",
         ):
             n = _ns_push_qualified_to_queue(ns_results)
             st.session_state.ns_scraper_results = ns_results
             if n:
-                st.session_state.ns_push_flash = (
-                    f"🔥 **{n}** qualified lead{'s' if n != 1 else ''} pushed to "
-                    f"{PARTNER_NAME}'s HOT queue — Dashboard → Branton Call Mode."
-                )
-                st.rerun()
+                st.success(f"🔥 **{n}** leads pushed — no other CRM data modified.")
+                st.balloons()
             else:
-                st.info("No new qualified leads to push (may already be Queued).")
+                st.info("All qualified leads already queued.")
 
-        st.caption(
-            "🔥 **Likely YES** rows push to HOT queue. Assessor buttons open owner/property search — "
-            "confirm RE in under 30 seconds, then push."
-        )
-
-    elif st.session_state.get("ns_pipeline_ran"):
-        st.warning("No names parsed — paste one name per line or full notice text.")
-    else:
-        st.info("Paste today's probate names and tap **🔍 Generate Assessor Search Links + Qualify**.")
+    st.markdown("---")
+    if st.button("🌎 Scale to National Empire", use_container_width=True, key="ai_empire_btn"):
+        st.session_state.ai_empire_visible = True
+    if st.session_state.get("ai_empire_visible"):
+        empire = _empire_scale_content()
+        st.text_area("Recruitment Script", empire["recruitment_script"], height=200, key="ai_emp_rec")
+        st.text_area("White-Label Plan", empire["white_label_plan"], height=200, key="ai_emp_wl")
+        st.text_area("JV Outreach — Assisted Living", empire["jv_outreach"], height=200, key="ai_emp_jv")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
