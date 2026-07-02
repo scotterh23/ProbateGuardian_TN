@@ -200,13 +200,34 @@ st.markdown(
         transform: none !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
     }
-    .crm-lead-call-line {
-        font-weight: 700;
-        font-size: 0.92rem;
-        line-height: 1.35;
-        color: #3fb950;
-        margin: 0.2rem 0 0.05rem 0;
+    .crm-lead-contact-head {
+        margin: 0.35rem 0 0.18rem 0;
+        padding: 0.5rem 0.6rem;
+        background: linear-gradient(135deg, #1c2128 0%, #161b22 100%);
+        border: 1px solid #30363d;
+        border-radius: 8px;
+        line-height: 1.4;
         word-break: break-word;
+    }
+    .crm-lead-contact-head .crm-poc-name {
+        font-size: 1.2rem;
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.01em;
+    }
+    .crm-lead-contact-head .crm-poc-dot {
+        color: #8b949e;
+        font-weight: 600;
+    }
+    .crm-lead-contact-head .crm-poc-phone {
+        font-size: 1.02rem;
+        font-weight: 700;
+        color: #3fb950;
+    }
+    .crm-lead-contact-head .crm-poc-email {
+        font-size: 0.94rem;
+        font-weight: 600;
+        color: #79c0ff;
     }
     [data-testid="stToast"] {
         background: linear-gradient(135deg, #1a4d2e, #238636) !important;
@@ -236,15 +257,34 @@ st.markdown(
     }
     .crm-lead-primary-contact {
         background: linear-gradient(135deg, #1a3a2a 0%, #0d2818 100%);
-        border: 1px solid #2ea043;
-        border-radius: 10px;
-        padding: 0.75rem 1rem;
-        margin-bottom: 0.75rem;
-        font-size: clamp(0.95rem, 3.5vw, 1.15rem);
-        font-weight: 700;
+        border: 2px solid #2ea043;
+        border-radius: 12px;
+        padding: 1rem 1.15rem;
+        margin-bottom: 0.85rem;
         line-height: 1.45;
-        color: #aff5b4;
         word-break: break-word;
+        box-shadow: 0 4px 16px rgba(46, 160, 67, 0.22);
+    }
+    .crm-lead-primary-contact .crm-poc-name {
+        font-size: clamp(1.5rem, 5vw, 1.95rem);
+        font-weight: 900;
+        color: #ffffff;
+        letter-spacing: 0.015em;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    }
+    .crm-lead-primary-contact .crm-poc-dot {
+        color: #8b949e;
+        font-weight: 600;
+    }
+    .crm-lead-primary-contact .crm-poc-phone {
+        font-size: clamp(1.05rem, 3.8vw, 1.28rem);
+        font-weight: 700;
+        color: #3fb950;
+    }
+    .crm-lead-primary-contact .crm-poc-email {
+        font-size: clamp(0.95rem, 3.2vw, 1.1rem);
+        font-weight: 600;
+        color: #79c0ff;
     }
     .crm-quick-stage-start { display: none; }
     .crm-quick-stage-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
@@ -1427,6 +1467,29 @@ def _lead_primary_contact_line(lead: dict) -> str:
     if email:
         segments.append(email)
     return " • ".join(segments)
+
+
+def _lead_primary_contact_header_html(lead: dict, *, detail: bool = False) -> str:
+    """Primary contact name • phone • email — largest text for list cards and detail header."""
+    name = html.escape(_lead_poc_name(lead))
+    phone = _lead_poc_phone(lead)
+    email = (lead.get("email") or "").strip()
+    if not email:
+        em = re.search(r"[\w.+-]+@[\w.-]+\.\w+", lead.get("raw") or "", re.I)
+        email = em.group(0) if em else ""
+    segments = [f'<span class="crm-poc-name">{name}</span>']
+    if phone:
+        segments.append(
+            f'<span class="crm-poc-dot"> • </span>'
+            f'<span class="crm-poc-phone">{html.escape(phone)}</span>'
+        )
+    if email:
+        segments.append(
+            f'<span class="crm-poc-dot"> • </span>'
+            f'<span class="crm-poc-email">{html.escape(email)}</span>'
+        )
+    wrapper = "crm-lead-primary-contact" if detail else "crm-lead-contact-head"
+    return f'<div class="{wrapper}">{"".join(segments)}</div>'
 
 
 def _lead_list_button_label(lead: dict) -> str:
@@ -4341,59 +4404,200 @@ with st.sidebar:
 _NS_LINKS = {
     "tnpublicnotice.com": "https://www.tnpublicnotice.com/",
     "Gallatin News": "https://www.gallatinnews.com/",
+    "Hendersonville Standard": "https://www.hendersonvillestandard.com/",
     "Sumner County Assessor": "https://sumnertn.geopowered.com/propertysearch/",
 }
-_NS_PROBATE_KW = ("deceased", "estate of", "notice to creditors", "died on", "in re:", "probate")
+_NS_PROBATE_KW = (
+    "deceased", "estate of", "notice to creditors", "died on", "in re:", "probate",
+    "letters testamentary", "personal representative", "executor", "administrator",
+)
 _NS_ADDR_KW = (
     "pike", "road", "rd", "drive", "dr", "lane", "ln", "avenue", "ave",
     "street", "st", "court", "ct", "way", "blvd", "gallatin", "hendersonville",
-    "portland", "white house",
+    "portland", "white house", "cottontown", "westmoreland",
+)
+_NS_SUMNER_CITIES = (
+    "Hendersonville", "Gallatin", "Portland", "White House", "Cottontown", "Westmoreland",
 )
 _NS_QUEUE_NOTE = "Newspaper Scrape • High Potential Asset"
+_NS_SPLIT_RE = re.compile(
+    r"\n\s*\n+|\n(?=(?:NOTICE|Notice|Estate of|IN RE|In Re|Published|Probate|Obituary)\b)",
+    re.I,
+)
+_NS_PR_RE = re.compile(
+    r"(?:personal representative|petitioner|executor|executrix|administrator|"
+    r"administratrix)[:\s]+([A-Z][^\n.;]{2,70})",
+    re.I,
+)
+_NS_SURVIVED_RE = re.compile(
+    r"survived by\s+(.+?)(?:\.|;|\n|He was|She was|A\s+(?:memorial|service))",
+    re.I | re.S,
+)
+_NS_DATE_RE = re.compile(
+    r"(?:published|filed|died|passed|deceased)\s+(?:on\s+)?"
+    r"([A-Za-z]+\s+\d{1,2},?\s+\d{4}|\d{1,2}/\d{1,2}/\d{2,4})",
+    re.I,
+)
+_NS_SCORE_LABEL = {"High": "🔥 High", "Med": "🟡 Med", "Low": "⚪ Low"}
+_NS_SCORE_RANK = {"High": 3, "Med": 2, "Low": 1}
 
 
-def _ns_extract_decedent(line: str) -> str:
-    m = re.search(r"estate of\s+(.+?)(?:,|\.|$)", line, re.I)
-    if m:
-        return m.group(1).strip()[:90]
-    m2 = re.search(r"^([A-Z][a-z]+(?:\s+[A-Z][\.'-]?[a-z]+)+)", line)
-    if m2:
-        return m2.group(1).strip()[:90]
-    return line[:90]
+def _ns_score_display(score: str) -> str:
+    return _NS_SCORE_LABEL.get(score, score)
 
 
-def _ns_phone_search_string(line: str) -> str:
-    words = [w for w in re.sub(r"[^A-Za-z\s]", " ", line).split() if len(w) > 2]
-    if len(words) >= 2:
-        return f"{words[0]} {words[-1]} · Sumner County, TN"
-    return line[:50]
-
-
-def _ns_score_line(line: str) -> str:
-    lower = line.lower()
-    if any(word in lower for word in _NS_ADDR_KW):
+def _ns_score_from_block(text: str, address_clue: str) -> str:
+    lower = (text or "").lower()
+    addr_lower = (address_clue or "").lower()
+    has_street = bool(re.search(r"\d+\s+\w+.*(?:rd|road|st|street|ave|dr|drive|ln|lane|ct|way|pike|blvd)", lower))
+    if has_street or (address_clue and address_clue != "—"):
+        return "High"
+    if any(word in lower or word in addr_lower for word in _NS_ADDR_KW):
         return "High"
     if any(kw in lower for kw in _NS_PROBATE_KW):
-        return "Medium"
+        return "Med"
     return "Low"
+
+
+def _ns_extract_decedent(text: str) -> str:
+    m = re.search(r"estate of\s+(.+?)(?:,|\.|\n|$)", text, re.I)
+    if m:
+        return m.group(1).strip()[:90]
+    m2 = re.search(r"^([A-Z][a-z]+(?:\s+[A-Z][\.'-]?[a-z]+)+)", text.strip(), re.M)
+    if m2:
+        return m2.group(1).strip()[:90]
+    first = text.strip().split("\n")[0][:90]
+    return first or "Unknown Decedent"
+
+
+def _ns_extract_date(text: str) -> str:
+    dm = _NS_DATE_RE.search(text)
+    if dm:
+        return dm.group(1).strip()
+    m = DEATH_DATE_RE.search(text)
+    if m:
+        return m.group(0).strip()
+    m2 = re.search(r"\b(\d{1,2}/\d{1,2}/\d{2,4})\b", text)
+    if m2:
+        return m2.group(1)
+    return "—"
+
+
+def _ns_extract_pr_heir(text: str) -> str:
+    pr = _NS_PR_RE.search(text)
+    if pr:
+        return pr.group(1).strip()[:80]
+    surv = _NS_SURVIVED_RE.search(text)
+    if surv:
+        return surv.group(1).strip()[:80]
+    return "Contact TBD"
+
+
+def _ns_extract_address(text: str) -> str:
+    m = CRUSHER_STREET_RE.search(text)
+    if m:
+        return re.sub(r"\s+", " ", m.group(1).strip())
+    m2 = re.search(
+        r"(\d+\s+[\w\s\.\#]+(?:Rd|Road|St|Street|Ave|Avenue|Dr|Drive|Ln|Lane|Ct|Court|Way|Blvd)\.?,?\s*[\w\s]+,?\s*TN\s*\d{5})",
+        text,
+        re.I,
+    )
+    if m2:
+        return m2.group(1).strip()
+    for city in _NS_SUMNER_CITIES:
+        if city.lower() in text.lower():
+            return f"{city}, TN"
+    return "—"
+
+
+def _ns_phone_search_string(pr_heir: str, address_clue: str, text: str) -> str:
+    contact = (pr_heir or "").split("(")[0].strip()
+    if contact in ("", "Contact TBD"):
+        words = [w for w in re.sub(r"[^A-Za-z\s]", " ", text).split() if len(w) > 2]
+        if len(words) >= 2:
+            return f"{words[0]} {words[-1]} · Sumner County, TN"
+        return "— need heir/PR name —"
+    parts = [p for p in re.sub(r"[,\\.]", " ", contact).split() if p]
+    city = "Sumner County"
+    if address_clue and address_clue != "—":
+        cm = re.search(r",\s*([^,]+)\s*,\s*TN", address_clue, re.I)
+        if cm:
+            city = cm.group(1).strip()
+        elif ", TN" in address_clue:
+            city = address_clue.replace(", TN", "").strip()
+    if len(parts) >= 2:
+        return f"{parts[0]} {parts[-1]} · {city}, TN"
+    return f"{contact} · {city}, TN"
+
+
+def _ns_split_blocks(raw: str) -> list:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    blocks = [b.strip() for b in _NS_SPLIT_RE.split(text) if b.strip()]
+    if len(blocks) <= 1 and len(text) > 40:
+        lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+        blocks = [ln for ln in lines if any(kw in ln.lower() for kw in _NS_PROBATE_KW)]
+        if not blocks:
+            blocks = [text]
+    return [b for b in blocks if len(b) >= 20]
+
+
+def _ns_parse_block(block: str) -> dict:
+    decedent = _ns_extract_decedent(block)
+    date = _ns_extract_date(block)
+    pr_heir = _ns_extract_pr_heir(block)
+    address_clue = _ns_extract_address(block)
+    score = _ns_score_from_block(block, address_clue)
+    return {
+        "decedent": decedent,
+        "date": date,
+        "pr_heir": pr_heir,
+        "address_clue": address_clue,
+        "real_estate_score": score,
+        "score_display": _ns_score_display(score),
+        "phone_search_string": _ns_phone_search_string(pr_heir, address_clue, block),
+        "status": "Ready",
+        "raw": block,
+        "county": "Sumner County",
+    }
 
 
 def _ns_analyze_text(raw: str) -> list:
     results = []
-    for line in [ln.strip() for ln in raw.split("\n") if ln.strip()]:
-        if not any(kw in line.lower() for kw in _NS_PROBATE_KW):
+    seen = set()
+    for block in _ns_split_blocks(raw):
+        if not any(kw in block.lower() for kw in _NS_PROBATE_KW):
             continue
-        results.append({
-            "decedent": _ns_extract_decedent(line),
-            "real_estate_score": _ns_score_line(line),
-            "phone_search_string": _ns_phone_search_string(line),
-            "status": "Analyzed",
-            "raw": line,
-            "county": "Sumner County",
-        })
-    order = {"High": 3, "Medium": 2, "Low": 1}
-    results.sort(key=lambda x: order.get(x["real_estate_score"], 0), reverse=True)
+        row = _ns_parse_block(block)
+        key = (row["decedent"], row.get("date"), row.get("address_clue"))
+        if key in seen:
+            continue
+        seen.add(key)
+        results.append(row)
+    results.sort(
+        key=lambda x: (_NS_SCORE_RANK.get(x.get("real_estate_score"), 0), x.get("decedent", "")),
+        reverse=True,
+    )
     return results
+
+
+def _ns_results_for_json(results: list) -> list:
+    export = []
+    for row in results:
+        export.append({
+            "decedent": row.get("decedent", ""),
+            "date": row.get("date", ""),
+            "heir_pr": row.get("pr_heir", ""),
+            "real_estate_score": row.get("real_estate_score", "Low"),
+            "address_clue": row.get("address_clue", ""),
+            "phone_search_string": row.get("phone_search_string", ""),
+            "status": row.get("status", ""),
+            "county": row.get("county", "Sumner County"),
+            "source_note": _NS_QUEUE_NOTE,
+            "raw": row.get("raw", ""),
+        })
+    return export
 
 
 def _ns_push_high_to_queue(results: list, selected: list) -> int:
@@ -4402,21 +4606,27 @@ def _ns_push_high_to_queue(results: list, selected: list) -> int:
         if row.get("real_estate_score") != "High" or row.get("status") == "Queued":
             continue
         decedent = (row.get("decedent") or "").strip()
-        if not decedent:
+        if not decedent or decedent == "Unknown Decedent":
             continue
+        address = row.get("address_clue", "—")
+        if address == "—":
+            address = "Address TBD"
         note_text = _NS_QUEUE_NOTE
         if row.get("phone_search_string"):
-            note_text += f"\n{row['phone_search_string']}"
+            note_text += f"\nBV: {row['phone_search_string']}"
+        if row.get("pr_heir") and row["pr_heir"] != "Contact TBD":
+            note_text += f"\nPR/Heir: {row['pr_heir']}"
         if row.get("raw"):
-            note_text += f"\n{row['raw']}"
+            note_text += f"\n{row['raw'][:500]}"
         parsed = {
             "decedent": decedent,
-            "address": "Address TBD",
+            "address": address,
             "county": row.get("county", "Sumner County"),
-            "heirs": "Contact TBD",
+            "heirs": row.get("pr_heir", "Contact TBD"),
             "phone": "",
             "email": "",
             "raw": row.get("raw", decedent),
+            "filing_date": row.get("date", "") if row.get("date") != "—" else "",
         }
         st.session_state.leads.insert(
             0,
@@ -4424,7 +4634,7 @@ def _ns_push_high_to_queue(results: list, selected: list) -> int:
                 parsed,
                 pipeline_stage="🔥 Hot / New (call today)",
                 status="New/Hot",
-                score=85,
+                score=90 if address != "Address TBD" else 85,
                 source="newspaper_scraper",
                 assigned_to_branton=True,
                 follow_up_days=0,
@@ -5022,7 +5232,7 @@ with tab_dashboard:
                         for item in list_filtered:
                             is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
                             st.markdown(
-                                f'<div class="crm-lead-call-line">{html.escape(_lead_call_line(item))}</div>',
+                                _lead_primary_contact_header_html(item),
                                 unsafe_allow_html=True,
                             )
                             if st.button(
@@ -5044,9 +5254,7 @@ with tab_dashboard:
                         st.info("Select a lead from the list.")
                     else:
                         st.markdown(
-                            '<div class="crm-lead-primary-contact">'
-                            f"Primary Contact: {html.escape(_lead_primary_contact_line(lead))}"
-                            "</div>",
+                            _lead_primary_contact_header_html(lead, detail=True),
                             unsafe_allow_html=True,
                         )
                         e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
@@ -6045,75 +6253,281 @@ You never have to figure out the hard stuff alone.""",
 with tab_newspaper:
     st.session_state.setdefault("ns_scraper_raw", "")
     st.session_state.setdefault("ns_scraper_results", [])
+    st.session_state.setdefault("ns_preselect_high", False)
+    st.session_state.setdefault("ns_json_visible", False)
+    st.session_state.setdefault("ns_pipeline_ran", False)
+
+    _NS_SCORE_BADGE = {"High": "🔥 HIGH", "Med": "● MED", "Low": "○ LOW"}
+    _NS_SCORE_PILL = {
+        "High": '<span class="ns-pill ns-pill-high">🔥 HIGH</span>',
+        "Med": '<span class="ns-pill ns-pill-med">● MED</span>',
+        "Low": '<span class="ns-pill ns-pill-low">○ LOW</span>',
+    }
 
     st.markdown(
         """
         <style>
-        .ns-links {
+        .ns-shell { margin-bottom: 0.5rem; }
+        .ns-quicklinks {
             background: #161b22;
             border: 1px solid #30363d;
             border-radius: 12px;
-            padding: 0.75rem 0.85rem;
-            margin-bottom: 0.85rem;
-            font-size: 0.88rem;
+            padding: 0.7rem 0.85rem;
+            margin-bottom: 0.8rem;
+            font-size: 0.86rem;
+            line-height: 1.6;
+            word-break: break-word;
         }
-        .ns-links a { color: #58a6ff; font-weight: 600; text-decoration: none; }
+        .ns-quicklinks a { color: #58a6ff; font-weight: 700; text-decoration: none; }
+        .ns-quicklinks a:hover { text-decoration: underline; }
+        .ns-hero {
+            background: linear-gradient(135deg, #0d2818 0%, #161b22 55%, #1a2332 100%);
+            border: 1px solid #238636;
+            border-radius: 14px;
+            padding: 1rem 1.1rem;
+            margin-bottom: 0.8rem;
+        }
+        .ns-hero h3 { margin: 0 0 0.35rem 0; color: #e6edf3; font-size: 1.15rem; }
+        .ns-hero p { margin: 0; color: #8b949e; font-size: 0.88rem; line-height: 1.5; }
+        .ns-agent-bar {
+            background: #161b22;
+            border-left: 3px solid #58a6ff;
+            border-radius: 8px;
+            padding: 0.65rem 0.8rem;
+            margin-bottom: 0.8rem;
+            font-size: 0.84rem;
+            color: #c9d1d9;
+            line-height: 1.45;
+        }
+        .ns-paste-shell {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 1rem 1.05rem;
+            margin-bottom: 0.7rem;
+        }
+        .ns-paste-title {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: #e6edf3;
+            margin-bottom: 0.4rem;
+        }
+        .ns-paste-sub {
+            font-size: 0.82rem;
+            color: #8b949e;
+            margin-bottom: 0.5rem;
+            line-height: 1.45;
+        }
+        .ns-btn-green-marker { display: none; }
+        .ns-btn-green-marker + div[data-testid="stButton"] > button {
+            background: linear-gradient(135deg, #0d2818 0%, #238636 45%, #2ea043 100%) !important;
+            border: 2px solid #3fb950 !important;
+            color: #fff !important;
+            font-weight: 800 !important;
+            font-size: 1.05rem !important;
+            min-height: 3.4rem !important;
+        }
+        .ns-results-title {
+            font-size: 1rem;
+            font-weight: 700;
+            color: #e6edf3;
+            margin: 0.65rem 0 0.4rem 0;
+        }
+        .ns-badge-row {
+            display: flex; flex-wrap: wrap; gap: 0.4rem;
+            margin-bottom: 0.55rem;
+        }
+        .ns-pill {
+            display: inline-block;
+            padding: 0.18rem 0.6rem;
+            border-radius: 999px;
+            font-size: 0.72rem;
+            font-weight: 800;
+            letter-spacing: 0.05em;
+        }
+        .ns-pill-high { background: #238636; color: #fff; border: 1px solid #3fb950; }
+        .ns-pill-med { background: #6e4c0a; color: #fff; border: 1px solid #d29922; }
+        .ns-pill-low { background: #30363d; color: #c9d1d9; border: 1px solid #484f58; }
+        .ns-stats {
+            display: flex; flex-wrap: wrap; gap: 0.5rem;
+            margin: 0.5rem 0 0.75rem 0;
+        }
+        .ns-stat {
+            flex: 1 1 6rem;
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 0.5rem 0.65rem;
+            text-align: center;
+        }
+        .ns-stat b { display: block; font-size: 1.2rem; color: #e6edf3; }
+        .ns-stat span { font-size: 0.7rem; color: #8b949e; text-transform: uppercase; }
+        .ns-idle {
+            background: #161b22;
+            border: 1px dashed #30363d;
+            border-radius: 10px;
+            padding: 1.1rem;
+            text-align: center;
+            color: #8b949e;
+            font-size: 0.88rem;
+            margin-top: 0.5rem;
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
-    ns_link_bits = " | ".join(
+
+    st.markdown('<div class="ns-shell">', unsafe_allow_html=True)
+
+    ns_ql = " | ".join(
         f'<a href="{url}" target="_blank" rel="noopener">{label}</a>'
         for label, url in _NS_LINKS.items()
     )
-    st.markdown(f'<div class="ns-links">Quick links: {ns_link_bits}</div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="ns-quicklinks">Quick links: {ns_ql}</div>', unsafe_allow_html=True)
 
-    ns_raw = st.text_area(
-        "Paste raw obituaries, Notice to Creditors, or court text here",
-        value=st.session_state.get("ns_scraper_raw", ""),
-        height=360,
-        placeholder="Paste from tnpublicnotice.com, Gallatin News, obituaries, or court notices…",
-        key="ns_scraper_paste",
+    st.markdown(
+        '<div class="ns-hero">'
+        "<h3>📰 Newspaper Scraper • Small Counties</h3>"
+        "<p>Premium Sumner County harvester — paste notices, run the agent pipeline, "
+        f"push 🔥 HIGH leads to {PARTNER_NAME}'s queue, export JSON for full AI automation.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        '<div class="ns-agent-bar">'
+        "<b>Agent workflow:</b> Open quick links → paste all notices → "
+        "<b>Run Full Agent Pipeline</b> → review table → push HIGH → copy JSON."
+        "</div>",
+        unsafe_allow_html=True,
     )
 
-    if st.button("Analyze & Score Leads", use_container_width=True, type="primary", key="ns_analyze_btn"):
+    st.markdown('<div class="ns-paste-shell">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="ns-paste-title">📋 Paste raw obituaries, Notice to Creditors, or court text</div>'
+        '<div class="ns-paste-sub">Separate each estate with a blank line. '
+        "Pipeline auto-extracts decedent, date, heir/PR, address clues, and phone search strings.</div>",
+        unsafe_allow_html=True,
+    )
+    ns_raw = st.text_area(
+        "Newspaper scraper paste",
+        value=st.session_state.get("ns_scraper_raw", ""),
+        height=420,
+        placeholder=(
+            "EXAMPLE — Notice to Creditors:\n"
+            "Estate of Mary Jane Thompson, deceased\n"
+            "Personal Representative: Robert Thompson\n"
+            "Published March 12, 2026 — Sumner County Probate Court\n"
+            "Creditors must file claims within 4 months…\n\n"
+            "EXAMPLE — Obituary with address (🔥 HIGH score):\n"
+            "William R. Davis — died January 4, 2026\n"
+            "Survived by daughter Susan Davis of Hendersonville, TN\n"
+            "Residence: 412 Old Hickory Blvd, Gallatin, TN 37066\n\n"
+            "Paste more notices below — one block per estate…"
+        ),
+        key="ns_scraper_paste",
+        label_visibility="collapsed",
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown('<div class="ns-btn-green-marker"></div>', unsafe_allow_html=True)
+    if st.button(
+        "🚀 Run Full Agent Pipeline",
+        use_container_width=True,
+        type="primary",
+        key="ns_analyze_btn",
+    ):
         if not ns_raw.strip():
-            st.error("Paste some text first.")
+            st.error("Paste notice text first — then run the pipeline.")
         else:
             st.session_state.ns_scraper_raw = ns_raw
             st.session_state.ns_scraper_results = _ns_analyze_text(ns_raw)
-            if st.session_state.ns_scraper_results:
-                st.success(f"✅ **{len(st.session_state.ns_scraper_results)}** leads analyzed")
-            else:
-                st.warning("No probate-related lines detected.")
+            st.session_state.ns_pipeline_ran = True
+            st.session_state.ns_preselect_high = False
+            st.session_state.pop("ns_push_flash", None)
+            st.session_state.ns_json_visible = bool(st.session_state.ns_scraper_results)
             st.rerun()
+
+    if st.session_state.get("ns_push_flash"):
+        st.success(st.session_state.pop("ns_push_flash"))
+        st.balloons()
 
     ns_results = st.session_state.get("ns_scraper_results", [])
     if ns_results:
+        ns_high_n = sum(1 for r in ns_results if r.get("real_estate_score") == "High")
+        ns_med_n = sum(1 for r in ns_results if r.get("real_estate_score") == "Med")
+        ns_low_n = sum(1 for r in ns_results if r.get("real_estate_score") == "Low")
+        ns_queued_n = sum(1 for r in ns_results if r.get("status") == "Queued")
+
+        st.markdown('<div class="ns-results-title">📊 Pipeline Results</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div class="ns-badge-row">'
+            f'{_NS_SCORE_PILL["High"]} {_NS_SCORE_PILL["Med"]} {_NS_SCORE_PILL["Low"]}'
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'<div class="ns-stats">'
+            f'<div class="ns-stat"><b>{len(ns_results)}</b><span>Total</span></div>'
+            f'<div class="ns-stat"><b style="color:#3fb950">{ns_high_n}</b><span>High</span></div>'
+            f'<div class="ns-stat"><b style="color:#d29922">{ns_med_n}</b><span>Med</span></div>'
+            f'<div class="ns-stat"><b style="color:#8b949e">{ns_low_n}</b><span>Low</span></div>'
+            f'<div class="ns-stat"><b style="color:#58a6ff">{ns_queued_n}</b><span>Queued</span></div>'
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        ns_sel_a, ns_sel_b = st.columns(2)
+        with ns_sel_a:
+            if st.button("☑️ Select All 🔥 HIGH", use_container_width=True, key="ns_select_all_high"):
+                st.session_state.ns_preselect_high = True
+                st.rerun()
+        with ns_sel_b:
+            if st.button("Clear Selection", use_container_width=True, key="ns_clear_select"):
+                st.session_state.ns_preselect_high = False
+                st.rerun()
+
+        ns_preselect = st.session_state.get("ns_preselect_high", False)
         ns_editor_rows = [
             {
-                "Select": False,
+                "Select": ns_preselect and row.get("real_estate_score") == "High",
+                "_row_id": i,
                 "Decedent": row.get("decedent", ""),
-                "Real Estate Score": row.get("real_estate_score", "Low"),
+                "Date": row.get("date", "—"),
+                "Heir/PR": row.get("pr_heir", "Contact TBD"),
+                "Real Estate Score": _NS_SCORE_BADGE.get(
+                    row.get("real_estate_score", "Low"), "○ LOW"
+                ),
+                "Address Clue": row.get("address_clue", "—"),
                 "Phone Search String": row.get("phone_search_string", ""),
-                "Status": row.get("status", "Analyzed"),
+                "Status": row.get("status", "Ready"),
             }
-            for row in ns_results
+            for i, row in enumerate(ns_results)
         ]
         ns_edited = st.data_editor(
             ns_editor_rows,
             column_config={
                 "Select": st.column_config.CheckboxColumn(
-                    "Select",
-                    help="Check High-score leads to add to Call Queue",
+                    "✓",
+                    help="Select 🔥 HIGH rows to push to Branton's HOT queue",
                     default=False,
                 ),
-                "Decedent": st.column_config.TextColumn("Decedent", disabled=True),
-                "Real Estate Score": st.column_config.TextColumn("Real Estate Score", disabled=True),
-                "Phone Search String": st.column_config.TextColumn("Phone Search String", disabled=True),
-                "Status": st.column_config.TextColumn("Status", disabled=True),
+                "_row_id": None,
+                "Decedent": st.column_config.TextColumn("Decedent", width="medium", disabled=True),
+                "Date": st.column_config.TextColumn("Date", width="small", disabled=True),
+                "Heir/PR": st.column_config.TextColumn("Heir/PR", width="medium", disabled=True),
+                "Real Estate Score": st.column_config.TextColumn(
+                    "Real Estate Score", width="small", disabled=True,
+                ),
+                "Address Clue": st.column_config.TextColumn("Address Clue", width="medium", disabled=True),
+                "Phone Search String": st.column_config.TextColumn(
+                    "Phone Search String", width="large", disabled=True,
+                ),
+                "Status": st.column_config.TextColumn("Status", width="small", disabled=True),
             },
-            disabled=["Decedent", "Real Estate Score", "Phone Search String", "Status"],
+            disabled=[
+                "_row_id", "Decedent", "Date", "Heir/PR",
+                "Real Estate Score", "Address Clue", "Phone Search String", "Status",
+            ],
             hide_index=True,
             use_container_width=True,
             key="ns_scraper_table",
@@ -6121,34 +6535,87 @@ with tab_newspaper:
 
         ns_high_selected = []
         for r in ns_edited:
-            if not r.get("Select") or r.get("Real Estate Score") != "High":
+            if not r.get("Select"):
                 continue
-            for orig in ns_results:
-                if (
-                    orig.get("decedent") == r.get("Decedent")
-                    and orig.get("phone_search_string") == r.get("Phone Search String")
-                ):
-                    ns_high_selected.append(orig)
-                    break
+            row_idx = r.get("_row_id")
+            if row_idx is None or row_idx >= len(ns_results):
+                continue
+            if ns_results[row_idx].get("real_estate_score") != "High":
+                continue
+            ns_high_selected.append(ns_results[row_idx])
 
         if st.button(
-            "✅ Add Selected High-Score Leads to Call Queue",
+            "📋 Copy Full JSON for Hermes / Open Claw / Claude",
+            use_container_width=True,
+            key="ns_show_json_btn",
+        ):
+            st.session_state.ns_json_visible = True
+
+        ns_json_payload = {
+            "agent": "ProbateGuardian Newspaper Scraper",
+            "tab": "📰 Newspaper Scraper • Small Counties",
+            "workflow": "paste → run pipeline → push high → export json",
+            "county": "Sumner County, TN",
+            "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "lead_count": len(ns_results),
+            "high_count": ns_high_n,
+            "leads": _ns_results_for_json(ns_results),
+        }
+        ns_json_str = json.dumps(ns_json_payload, indent=2, ensure_ascii=False)
+        if st.session_state.get("ns_json_visible"):
+            st.code(ns_json_str, language="json")
+            st.text_area(
+                "Select all & copy for Hermes / Open Claw / Claude",
+                value=ns_json_str,
+                height=220,
+                key="ns_json_copy_area",
+            )
+            st.download_button(
+                "⬇️ Download JSON",
+                data=ns_json_str,
+                file_name=f"newspaper_scraper_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                mime="application/json",
+                use_container_width=True,
+                key="ns_json_download",
+            )
+
+        st.markdown('<div class="ns-btn-green-marker"></div>', unsafe_allow_html=True)
+        if st.button(
+            "✅ Push Selected High-Score Leads to Branton's HOT Queue 🔥",
             use_container_width=True,
             type="primary",
             key="ns_push_selected_btn",
         ):
             if not ns_high_selected:
-                st.warning("Select at least one **High**-score row in the table.")
+                st.warning("Select at least one **🔥 HIGH** row (or tap Select All 🔥 HIGH).")
             else:
                 n = _ns_push_high_to_queue(ns_results, ns_high_selected)
                 st.session_state.ns_scraper_results = ns_results
+                st.session_state.ns_preselect_high = False
                 if n:
-                    st.success(f"🔥 **{n}** leads added to Call Queue — check Dashboard → Branton Call Mode")
+                    st.session_state.ns_push_flash = (
+                        f"🔥 **{n}** high-score lead{'s' if n != 1 else ''} pushed to "
+                        f"{PARTNER_NAME}'s HOT queue — open Dashboard → Branton Call Mode."
+                    )
                     st.rerun()
                 else:
-                    st.info("No new leads added (may already be queued).")
+                    st.info("No new leads added — selected rows may already be Queued.")
 
-        st.caption("Only **High**-score rows can be pushed. Status updates to *Queued* after add.")
+        st.caption(
+            "Only **🔥 HIGH** rows push to the HOT queue. Status updates to *Queued* after a successful push."
+        )
+
+    elif st.session_state.get("ns_pipeline_ran"):
+        st.warning("No probate notices detected — paste full notice blocks and run the pipeline again.")
+    else:
+        st.markdown(
+            '<div class="ns-idle">'
+            "Paste notices above and tap <b>🚀 Run Full Agent Pipeline</b> to score leads."
+            "</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
