@@ -200,34 +200,46 @@ st.markdown(
         transform: none !important;
         box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
     }
-    .crm-lead-contact-head {
-        margin: 0.35rem 0 0.18rem 0;
-        padding: 0.5rem 0.6rem;
-        background: linear-gradient(135deg, #1c2128 0%, #161b22 100%);
-        border: 1px solid #30363d;
-        border-radius: 8px;
-        line-height: 1.4;
-        word-break: break-word;
+    .crm-lead-contact-head-md-marker { display: none; }
+    .crm-lead-contact-head-md-marker + div {
+        margin: 0.35rem 0 0.2rem 0 !important;
+        padding: 0.55rem 0.65rem !important;
+        background: linear-gradient(135deg, #1c2128 0%, #161b22 100%) !important;
+        border: 1px solid #30363d !important;
+        border-radius: 8px !important;
     }
-    .crm-lead-contact-head .crm-poc-name {
-        font-size: 1.2rem;
-        font-weight: 900;
-        color: #ffffff;
-        letter-spacing: 0.01em;
+    .crm-lead-contact-head-md-marker + div h3 {
+        margin: 0 !important;
+        padding: 0 !important;
+        font-size: 1.22rem !important;
+        font-weight: 900 !important;
+        line-height: 1.35 !important;
+        color: #ffffff !important;
     }
-    .crm-lead-contact-head .crm-poc-dot {
-        color: #8b949e;
-        font-weight: 600;
+    .crm-lead-contact-head-md-marker + div strong {
+        color: #ffffff !important;
+        font-weight: 900 !important;
     }
-    .crm-lead-contact-head .crm-poc-phone {
-        font-size: 1.02rem;
-        font-weight: 700;
-        color: #3fb950;
+    .crm-lead-primary-contact-md-marker { display: none; }
+    .crm-lead-primary-contact-md-marker + div {
+        margin-bottom: 0.75rem !important;
+        padding: 0.85rem 1rem !important;
+        background: linear-gradient(135deg, #1a3a2a 0%, #0d2818 100%) !important;
+        border: 2px solid #2ea043 !important;
+        border-radius: 12px !important;
+        box-shadow: 0 4px 16px rgba(46, 160, 67, 0.22) !important;
     }
-    .crm-lead-contact-head .crm-poc-email {
-        font-size: 0.94rem;
-        font-weight: 600;
-        color: #79c0ff;
+    .crm-lead-primary-contact-md-marker + div h2 {
+        margin: 0 !important;
+        padding: 0 !important;
+        font-size: clamp(1.55rem, 5vw, 2rem) !important;
+        font-weight: 900 !important;
+        line-height: 1.3 !important;
+        color: #ffffff !important;
+    }
+    .crm-lead-primary-contact-md-marker + div strong {
+        color: #ffffff !important;
+        font-weight: 900 !important;
     }
     [data-testid="stToast"] {
         background: linear-gradient(135deg, #1a4d2e, #238636) !important;
@@ -255,37 +267,7 @@ st.markdown(
         background: linear-gradient(135deg, #da3633, #f85149) !important;
         color: #ffffff !important;
     }
-    .crm-lead-primary-contact {
-        background: linear-gradient(135deg, #1a3a2a 0%, #0d2818 100%);
-        border: 2px solid #2ea043;
-        border-radius: 12px;
-        padding: 1rem 1.15rem;
-        margin-bottom: 0.85rem;
-        line-height: 1.45;
-        word-break: break-word;
-        box-shadow: 0 4px 16px rgba(46, 160, 67, 0.22);
-    }
-    .crm-lead-primary-contact .crm-poc-name {
-        font-size: clamp(1.5rem, 5vw, 1.95rem);
-        font-weight: 900;
-        color: #ffffff;
-        letter-spacing: 0.015em;
-        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-    }
-    .crm-lead-primary-contact .crm-poc-dot {
-        color: #8b949e;
-        font-weight: 600;
-    }
-    .crm-lead-primary-contact .crm-poc-phone {
-        font-size: clamp(1.05rem, 3.8vw, 1.28rem);
-        font-weight: 700;
-        color: #3fb950;
-    }
-    .crm-lead-primary-contact .crm-poc-email {
-        font-size: clamp(0.95rem, 3.2vw, 1.1rem);
-        font-weight: 600;
-        color: #79c0ff;
-    }
+
     .crm-quick-stage-start { display: none; }
     .crm-quick-stage-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
         min-height: 3.1rem !important;
@@ -1401,14 +1383,85 @@ def _format_poc_name(name: str) -> str:
     return re.sub(r"\b([A-Z])\b(?!\.)", r"\1.", name)
 
 
+def _extract_human_name_from_text(text: str) -> str:
+    text = (text or "").strip()
+    if not text or re.search(r"estate of|deceased|notice to creditors", text, re.I):
+        return ""
+    m = re.search(
+        r"(?:personal representative|petitioner|executor|primary contact|contact|primary)"
+        r"[:\s]+([A-Z][^\n,;|]{2,70})",
+        text,
+        re.I,
+    )
+    if m:
+        return m.group(1).strip()
+    m = re.match(r"^([A-Z][a-z]+(?:\s+[A-Z][\.'-]?[a-z]+)+)\s*\(", text)
+    if m:
+        return m.group(1).strip()
+    m = re.match(r"^([A-Z][a-z]+(?:\s+[A-Z][\.'-]?[a-z]+){1,4})$", text)
+    if m:
+        return m.group(1).strip()
+    return ""
+
+
+def _clean_poc_candidate(name: str) -> str:
+    clean = (name or "").split("(")[0].split("|")[0].strip()
+    clean = re.sub(r"\s*\+\s*.*$", "", clean).strip()
+    if not clean or clean.lower() in ("contact tbd", "tbd", "unknown", "—", "family contact"):
+        return ""
+    if re.search(r"estate of|deceased|@\w", clean, re.I):
+        return ""
+    return _format_poc_name(clean)
+
+
 def _lead_poc_name(lead: dict) -> str:
-    name = (lead.get("contact_name") or "").strip()
-    if not name:
-        heirs = (lead.get("heirs") or "").strip()
+    candidates = []
+    for key in ("contact_name", "name", "primary", "primary_contact"):
+        val = (lead.get(key) or "").strip()
+        if val:
+            candidates.append(val)
+    for key in ("summary", "note"):
+        val = (lead.get(key) or "").strip()
+        if val:
+            for line in val.split("\n"):
+                hit = _extract_human_name_from_text(line.strip())
+                if hit:
+                    candidates.append(hit)
+                    break
+    notes = lead.get("notes") or []
+    if notes and isinstance(notes, list):
+        first = notes[0]
+        note_text = (first.get("text") if isinstance(first, dict) else str(first)) or ""
+        for line in note_text.split("\n"):
+            line = line.strip()
+            if not line or re.fullmatch(r"[\d\(\)\-\+\s\.]+", line):
+                continue
+            hit = _extract_human_name_from_text(line)
+            if hit:
+                candidates.append(hit)
+                break
+    heirs = (lead.get("heirs") or "").strip()
+    if heirs:
         m = re.match(r"^([^(]+)", heirs)
         if m:
-            name = m.group(1).strip()
-    return _format_poc_name(name) if name else "Contact TBD"
+            candidates.append(m.group(1).strip())
+    for line in (lead.get("raw") or "").split("\n"):
+        line = line.strip()
+        if not line or re.search(r"^estate of\b", line, re.I):
+            continue
+        hit = _extract_human_name_from_text(line)
+        if hit:
+            candidates.append(hit)
+            break
+        m = re.match(r"^([A-Z][a-z]+(?:\s+[A-Z][\.'-]?[a-z]+)+)\s*\(", line)
+        if m:
+            candidates.append(m.group(1).strip())
+            break
+    for cand in candidates:
+        cleaned = _clean_poc_candidate(cand)
+        if cleaned:
+            return cleaned
+    return "Contact TBD"
 
 
 def _lead_poc_role(lead: dict) -> str:
@@ -1424,8 +1477,8 @@ def _lead_poc_role(lead: dict) -> str:
     return " / ".join(p.strip().title() for p in parts if p.strip())
 
 
-def _lead_poc_phone(lead: dict) -> str:
-    phone = (lead.get("phone") or "").strip()
+def _format_poc_phone(phone: str) -> str:
+    phone = (phone or "").strip()
     if not phone or phone in ("—", "TBD"):
         return ""
     digits = re.sub(r"\D", "", phone)
@@ -1434,11 +1487,37 @@ def _lead_poc_phone(lead: dict) -> str:
     return phone
 
 
-def _lead_poc_email(lead: dict) -> str:
+def _lead_poc_phone(lead: dict) -> str:
+    phone = _format_poc_phone(lead.get("phone") or "")
+    if phone:
+        return phone
+    for blob in (lead.get("raw") or "", lead.get("summary") or "", lead.get("note") or ""):
+        m = re.search(r"\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}", blob)
+        if m:
+            return _format_poc_phone(m.group(0))
+    notes = lead.get("notes") or []
+    if notes and isinstance(notes, list):
+        first = notes[0]
+        note_text = (first.get("text") if isinstance(first, dict) else str(first)) or ""
+        m = re.search(r"\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}", note_text)
+        if m:
+            return _format_poc_phone(m.group(0))
+    return ""
+
+
+def _lead_poc_email_display(lead: dict) -> str:
     email = (lead.get("email") or "").strip()
     if not email:
-        m = re.search(r"[\w.+-]+@[\w.-]+\.\w+", lead.get("raw") or "", re.I)
-        email = m.group(0) if m else ""
+        for blob in (lead.get("raw") or "", lead.get("summary") or "", lead.get("note") or ""):
+            m = re.search(r"[\w.+-]+@[\w.-]+\.\w+", blob, re.I)
+            if m:
+                email = m.group(0)
+                break
+    return email
+
+
+def _lead_poc_email(lead: dict) -> str:
+    email = _lead_poc_email_display(lead)
     return email.upper() if email else ""
 
 
@@ -1469,27 +1548,28 @@ def _lead_primary_contact_line(lead: dict) -> str:
     return " • ".join(segments)
 
 
-def _lead_primary_contact_header_html(lead: dict, *, detail: bool = False) -> str:
-    """Primary contact name • phone • email — largest text for list cards and detail header."""
-    name = html.escape(_lead_poc_name(lead))
+def _lead_primary_contact_line_md(lead: dict) -> str:
+    """Markdown: **NAME** • phone • email for sidebar cards and detail header."""
+    name = _lead_poc_name(lead)
     phone = _lead_poc_phone(lead)
-    email = (lead.get("email") or "").strip()
-    if not email:
-        em = re.search(r"[\w.+-]+@[\w.-]+\.\w+", lead.get("raw") or "", re.I)
-        email = em.group(0) if em else ""
-    segments = [f'<span class="crm-poc-name">{name}</span>']
+    email = _lead_poc_email_display(lead)
+    line = f"**{name}**"
     if phone:
-        segments.append(
-            f'<span class="crm-poc-dot"> • </span>'
-            f'<span class="crm-poc-phone">{html.escape(phone)}</span>'
-        )
+        line += f" • {phone}"
     if email:
-        segments.append(
-            f'<span class="crm-poc-dot"> • </span>'
-            f'<span class="crm-poc-email">{html.escape(email)}</span>'
-        )
-    wrapper = "crm-lead-primary-contact" if detail else "crm-lead-contact-head"
-    return f'<div class="{wrapper}">{"".join(segments)}</div>'
+        line += f" • {email}"
+    return line
+
+
+def _render_lead_primary_contact(lead: dict, *, detail: bool = False) -> None:
+    """Primary contact — largest bold text at top of list card or detail panel."""
+    line = _lead_primary_contact_line_md(lead)
+    if detail:
+        st.markdown('<div class="crm-lead-primary-contact-md-marker"></div>', unsafe_allow_html=True)
+        st.markdown(f"## {line}")
+    else:
+        st.markdown('<div class="crm-lead-contact-head-md-marker"></div>', unsafe_allow_html=True)
+        st.markdown(f"### {line}")
 
 
 def _lead_list_button_label(lead: dict) -> str:
@@ -5231,10 +5311,7 @@ with tab_dashboard:
                     with st.container(height=520):
                         for item in list_filtered:
                             is_selected = st.session_state.get("crm_selected_lead_id") == item["id"]
-                            st.markdown(
-                                _lead_primary_contact_header_html(item),
-                                unsafe_allow_html=True,
-                            )
+                            _render_lead_primary_contact(item)
                             if st.button(
                                 _lead_list_button_label(item),
                                 key=f"pick_{item['id']}",
@@ -5248,15 +5325,12 @@ with tab_dashboard:
                 lead = find_lead(selected_id)
 
                 with detail_col:
-                    st.markdown("#### Lead Detail & Edit")
-
                     if not lead:
+                        st.markdown("#### Lead Detail & Edit")
                         st.info("Select a lead from the list.")
                     else:
-                        st.markdown(
-                            _lead_primary_contact_header_html(lead, detail=True),
-                            unsafe_allow_html=True,
-                        )
+                        _render_lead_primary_contact(lead, detail=True)
+                        st.markdown("#### Lead Detail & Edit")
                         e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
                         current_stage = detail_pipeline_stage(lead)
                         with e1:
