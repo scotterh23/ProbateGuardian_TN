@@ -1590,6 +1590,246 @@ def _select_crm_lead(lead_id: str) -> None:
     st.session_state.pop("_lead_edit_sync_id", None)
 
 
+GUARDIAN_KIT_LINK = "https://probateguardians.com/roadmap/"
+
+_DRIP_CAMPAIGNS = (
+    ("no_answer", "No Answer – Day 1", "Empathy + Value"),
+    ("talked_kit", "Talked – Send Guardian Kit", "Guardian Kit delivery"),
+    ("interested_cma", "Interested – Schedule CMA", "Book CMA / Net Sheet"),
+    ("appt_set", "Appointment Set – Prep Script", "Pre-appointment prep"),
+    ("not_interested", "Not Interested – Nurture 30 Days", "Light 30-day nurture"),
+    ("left_vm", "Left Voicemail – Follow-up", "Post-voicemail touch"),
+)
+
+
+def _drip_contact_first(lead: dict, key_prefix: str = "dash") -> str:
+    lid = lead["id"]
+    raw = (
+        st.session_state.get(f"{key_prefix}_contact_{lid}", "")
+        or lead.get("contact_name")
+        or _lead_poc_name(lead)
+        or ""
+    )
+    name = raw.split("(")[0].strip()
+    return name if name and name != "Contact TBD" else "there"
+
+
+def _drip_combo(campaign_id: str, lead: dict, key_prefix: str = "dash") -> dict:
+    cf = _drip_contact_first(lead, key_prefix)
+    dec = lead.get("decedent", "your loved one")
+    addr = lead.get("address", "the property")
+    county = lead.get("county", "Middle TN")
+    gk = GUARDIAN_KIT_LINK
+    ph = DEDICATED_PHONE
+
+    if campaign_id == "no_answer":
+        return {
+            "label": "No Answer – Day 1",
+            "preview": "Empathy + value — free Guardian Kit, zero pressure.",
+            "subject": f"Thinking of you — Estate of {dec}",
+            "email": (
+                f"Dear {cf},\n\n"
+                f"I'm sorry for your loss. I know this is an incredibly difficult time.\n\n"
+                f"I'm reaching out very respectfully about the property at **{addr}** ({county}). "
+                f"No agenda — I help Middle Tennessee families with probate property questions, "
+                f"Net Sheets, and vendor coordination.\n\n"
+                f"Your free Guardian Kit (plain-English roadmap): {gk}\n\n"
+                f"Call or text anytime — completely free, no obligation.\n\n"
+                f"With compassion,\n"
+                f"Branton Walker · ProbateGuardian TN\n"
+                f"{ph}"
+            ),
+            "sms": (
+                f"Hi {cf}, Branton w/ ProbateGuardian — very sorry for your loss. "
+                f"Respectfully here if property questions come up on {addr}. "
+                f"Free Guardian Kit: {gk} · {ph}"
+            ),
+        }
+    if campaign_id == "talked_kit":
+        return {
+            "label": "Talked – Send Guardian Kit",
+            "preview": "Thanks for speaking — Guardian Kit link + next steps.",
+            "subject": f"Your Guardian Kit — Estate of {dec} · {addr}",
+            "email": (
+                f"Hi {cf},\n\n"
+                f"Thank you for taking a few minutes today. As promised, here is your "
+                f"**ProbateGuardian Guardian Kit** for the estate property at **{addr}** ({county}).\n\n"
+                f"Inside: vendor list, every sale path explained, timeline map — all subject to court approval.\n\n"
+                f"👉 Guardian Kit / Roadmap: {gk}\n\n"
+                f"No pressure, ever. Reply with any questions or call/text {ph}.\n\n"
+                f"— Branton Walker\n"
+                f"ProbateGuardian TN · Serving Middle Tennessee"
+            ),
+            "sms": (
+                f"Hi {cf}, Branton here — thanks for talking today. "
+                f"Your Guardian Kit for {addr}: {gk} · Questions? {ph}"
+            ),
+        }
+    if campaign_id == "interested_cma":
+        return {
+            "label": "Interested – Schedule CMA",
+            "preview": "Schedule complimentary CMA / Net Sheet walkthrough.",
+            "subject": f"Schedule your free Net Sheet — {addr}",
+            "email": (
+                f"Hi {cf},\n\n"
+                f"Great speaking with you about **{addr}** ({county}) and the **Estate of {dec}**.\n\n"
+                f"As discussed, I'd love to prepare your complimentary **Equity Snapshot / Net Sheet** — "
+                f"real proceeds math for the estate, not a Zillow guess.\n\n"
+                f"Guardian Kit for reference: {gk}\n\n"
+                f"What works better — a brief 15-minute call **Tuesday or Wednesday**?\n\n"
+                f"Reply here or call/text {ph}.\n\n"
+                f"— Branton Walker · ProbateGuardian TN"
+            ),
+            "sms": (
+                f"Hi {cf}, Branton — ready to schedule your free Net Sheet for {addr}. "
+                f"Tue or Wed work? {ph} · Kit: {gk}"
+            ),
+        }
+    if campaign_id == "appt_set":
+        return {
+            "label": "Appointment Set – Prep Script",
+            "preview": "Appointment confirmed + what to expect + prep list.",
+            "subject": f"Confirmed — Property review · {addr}",
+            "email": (
+                f"Hi {cf},\n\n"
+                f"Looking forward to our appointment regarding **{addr}** ({county}) — "
+                f"**Estate of {dec}**.\n\n"
+                f"**What to expect (15–20 min):**\n"
+                f"• Walk property condition (or photos if out of state)\n"
+                f"• Free Net Sheet / equity options — listing, Express Offers, as-is\n"
+                f"• Plain-English next steps — always subject to court approval\n\n"
+                f"Guardian Kit: {gk}\n\n"
+                f"Questions before we meet? {ph}\n\n"
+                f"— Branton Walker · ProbateGuardian TN"
+            ),
+            "sms": (
+                f"Hi {cf}, Branton — confirmed for {addr}. "
+                f"I'll bring Net Sheet options + Guardian Kit prep. Questions? {ph}"
+            ),
+        }
+    if campaign_id == "not_interested":
+        return {
+            "label": "Not Interested – Nurture 30 Days",
+            "preview": "Respectful nurture — here when ready, no pressure.",
+            "subject": f"No rush — we're here when you're ready · {addr}",
+            "email": (
+                f"Hi {cf},\n\n"
+                f"Completely understand — probate timelines are different for every family.\n\n"
+                f"I'll step back for now. If property questions come up on **{addr}** ({county}) "
+                f"in the next few weeks or months, your free Guardian Kit is always here: {gk}\n\n"
+                f"No calls unless you reach out first. Wishing you and your family peace.\n\n"
+                f"— Branton Walker · {ph}"
+            ),
+            "sms": (
+                f"Hi {cf}, Branton — no pressure on {addr}. "
+                f"Guardian Kit whenever useful: {gk} · {ph} anytime."
+            ),
+        }
+    if campaign_id == "left_vm":
+        return {
+            "label": "Left Voicemail – Follow-up",
+            "preview": "Friendly VM follow-up text + email with Kit link.",
+            "subject": f"Just tried you — Estate of {dec} · {addr}",
+            "email": (
+                f"Hi {cf},\n\n"
+                f"I just left you a brief voicemail about the property at **{addr}** ({county}).\n\n"
+                f"No pressure — I help families on the property side of probate: Net Sheets, vendors, "
+                f"and clear options subject to court approval.\n\n"
+                f"Free Guardian Kit: {gk}\n\n"
+                f"Call or text when convenient: {ph}\n\n"
+                f"— Branton Walker · ProbateGuardian TN"
+            ),
+            "sms": (
+                f"Hi {cf}, Branton — just left a VM about {addr}. "
+                f"No pressure. Free Kit: {gk} · {ph}"
+            ),
+        }
+    return {
+        "label": "Quick Drip",
+        "preview": "",
+        "subject": "",
+        "email": "",
+        "sms": "",
+    }
+
+
+def _render_quick_drip_section(lead: dict, key_prefix: str = "dash") -> None:
+    lid = lead["id"]
+    pending_key = f"{key_prefix}_drip_pending_{lid}"
+    sent_key = f"{key_prefix}_drip_sent_{lid}"
+
+    st.markdown("---")
+    st.markdown(
+        '<p style="font-size:1.15rem;font-weight:900;color:#58a6ff;margin:0.5rem 0 0.25rem 0;">'
+        "📧 Quick Drip</p>",
+        unsafe_allow_html=True,
+    )
+    st.caption(
+        f"One-click email + text for {PARTNER_NAME} — auto-fills name, address, "
+        f"{DEDICATED_PHONE}, Guardian Kit."
+    )
+
+    d1, d2 = st.columns(2)
+    for idx, (cid, label, _hint) in enumerate(_DRIP_CAMPAIGNS):
+        col = d1 if idx % 2 == 0 else d2
+        with col:
+            if st.button(
+                label,
+                key=f"{key_prefix}_drip_btn_{cid}_{lid}",
+                use_container_width=True,
+                type="secondary",
+            ):
+                st.session_state[pending_key] = cid
+                st.session_state.pop(sent_key, None)
+                st.rerun()
+
+    pending = st.session_state.get(pending_key)
+    if pending:
+        combo = _drip_combo(pending, lead, key_prefix)
+        st.markdown(f"**Preview:** {combo['preview']}")
+        st.text_area("Email preview", combo["email"], height=200, key=f"{key_prefix}_drip_em_{lid}")
+        st.text_area("Text preview", combo["sms"], height=100, key=f"{key_prefix}_drip_sms_{lid}")
+
+        heir_email = (lead.get("email") or "").strip()
+        mail_subject = urllib.parse.quote(combo["subject"])
+        mail_body = urllib.parse.quote(combo["email"])
+        mailto = f"mailto:{heir_email}?subject={mail_subject}&body={mail_body}" if heir_email else f"mailto:?subject={mail_subject}&body={mail_body}"
+        sms_body = urllib.parse.quote(combo["sms"])
+        heir_phone = re.sub(r"\D", "", lead.get("phone") or "")
+        sms_link = f"sms:{heir_phone}?&body={sms_body}" if heir_phone else f"sms:?&body={sms_body}"
+
+        confirm_c1, confirm_c2, confirm_c3 = st.columns(3)
+        with confirm_c1:
+            if st.button(
+                "✅ Send Now",
+                key=f"{key_prefix}_drip_send_{lid}",
+                use_container_width=True,
+                type="primary",
+            ):
+                add_note(
+                    lid,
+                    f"📧 Quick Drip sent — {combo['label']} · {datetime.now().strftime('%b %d, %Y')}",
+                    author=PARTNER_NAME,
+                )
+                st.session_state[sent_key] = combo["label"]
+                st.rerun()
+        with confirm_c2:
+            st.link_button("📧 Open Email", mailto, use_container_width=True)
+        with confirm_c3:
+            st.link_button("📱 Open Text", sms_link, use_container_width=True)
+
+        if st.session_state.get(sent_key):
+            st.success(
+                f"✅ **{st.session_state[sent_key]}** logged — tap **Open Email** or **Open Text** to send."
+            )
+        if st.button("Cancel preview", key=f"{key_prefix}_drip_cancel_{lid}"):
+            st.session_state.pop(pending_key, None)
+            st.session_state.pop(sent_key, None)
+            st.rerun()
+
+    st.markdown("---")
+
+
 def _sync_lead_edit_form(lead: dict, key_prefix: str) -> None:
     lid = lead["id"]
     if st.session_state.get("_lead_edit_sync_id") == lid:
@@ -1642,6 +1882,8 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
                 st.rerun()
         with nav_r:
             st.caption(f"Lead **{idx + 1}** of **{len(nav_list)}** · {lead.get('county', '—')}")
+
+    _render_quick_drip_section(lead, key_prefix)
 
     st.markdown("#### Lead Detail & Edit")
     st.markdown(
