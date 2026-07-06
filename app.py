@@ -1587,6 +1587,119 @@ def _select_crm_lead(lead_id: str) -> None:
         _flush_dash_notes(prev, show_saved=True)
     st.session_state.crm_selected_lead_id = lead_id
     st.session_state.pop("_dash_notes_sync_id", None)
+    st.session_state.pop("_lead_edit_sync_id", None)
+
+
+def _sync_lead_edit_form(lead: dict, key_prefix: str) -> None:
+    lid = lead["id"]
+    if st.session_state.get("_lead_edit_sync_id") == lid:
+        return
+    poc = (lead.get("contact_name") or _lead_poc_name(lead) or "").strip()
+    if poc == "Contact TBD":
+        poc = ""
+    st.session_state[f"{key_prefix}_contact_{lid}"] = poc
+    st.session_state[f"{key_prefix}_dec_{lid}"] = lead.get("decedent", "")
+    st.session_state[f"{key_prefix}_phone_{lid}"] = lead.get("phone", "")
+    st.session_state[f"{key_prefix}_email_{lid}"] = lead.get("email", "")
+    st.session_state[f"{key_prefix}_addr_{lid}"] = lead.get("address", "")
+    stage = detail_pipeline_stage(lead)
+    st.session_state[f"{key_prefix}_status_{lid}"] = stage
+    st.session_state[f"{key_prefix}_notes_{lid}"] = get_lead_notes_full_text(lead)
+    st.session_state[f"{key_prefix}_branton_{lid}"] = bool(lead.get("assigned_to_branton"))
+    st.session_state["_lead_edit_sync_id"] = lid
+
+
+def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: str = "dash") -> None:
+    """Clean editable lead panel — Primary Contact first, Save at bottom."""
+    if not lead:
+        st.markdown("#### Lead Detail & Edit")
+        st.info("Select a lead from the list.")
+        return
+
+    lid = lead["id"]
+    _sync_lead_edit_form(lead, key_prefix)
+
+    if nav_list and len(nav_list) > 1:
+        nav_ids = [l["id"] for l in nav_list]
+        idx = nav_ids.index(lid) if lid in nav_ids else 0
+        nav_l, nav_m, nav_r = st.columns([1, 1, 2])
+        with nav_l:
+            if st.button(
+                "◀ Previous Lead",
+                key=f"{key_prefix}_prev_{lid}",
+                use_container_width=True,
+                disabled=(idx <= 0),
+            ):
+                _select_crm_lead(nav_ids[idx - 1])
+                st.rerun()
+        with nav_m:
+            if st.button(
+                "Next Lead ▶",
+                key=f"{key_prefix}_next_{lid}",
+                use_container_width=True,
+                disabled=(idx >= len(nav_ids) - 1),
+            ):
+                _select_crm_lead(nav_ids[idx + 1])
+                st.rerun()
+        with nav_r:
+            st.caption(f"Lead **{idx + 1}** of **{len(nav_list)}** · {lead.get('county', '—')}")
+
+    st.markdown("#### Lead Detail & Edit")
+    st.markdown(
+        '<p style="font-size:1.05rem;font-weight:800;color:#aff5b4;margin:0 0 0.25rem 0;">'
+        "PRIMARY CONTACT NAME</p>",
+        unsafe_allow_html=True,
+    )
+    contact = st.text_input(
+        "Primary Contact Name",
+        key=f"{key_prefix}_contact_{lid}",
+        label_visibility="collapsed",
+        placeholder="Heir / Executor name",
+    )
+    decedent = st.text_input("Decedent", key=f"{key_prefix}_dec_{lid}")
+    ph_col, em_col = st.columns(2)
+    with ph_col:
+        phone = st.text_input("Phone", key=f"{key_prefix}_phone_{lid}")
+    with em_col:
+        email = st.text_input("Email", key=f"{key_prefix}_email_{lid}")
+    address = st.text_input("Address", key=f"{key_prefix}_addr_{lid}")
+    status = st.selectbox("Status", DETAIL_PIPELINE_STAGES, key=f"{key_prefix}_status_{lid}")
+    notes = st.text_area("Notes", height=220, key=f"{key_prefix}_notes_{lid}")
+    branton_on = st.toggle(f"Assign to {PARTNER_NAME}", key=f"{key_prefix}_branton_{lid}")
+
+    if st.button(
+        "💾 Save Changes",
+        type="primary",
+        use_container_width=True,
+        key=f"{key_prefix}_save_{lid}",
+    ):
+        role = (lead.get("contact_role") or "").strip()
+        heirs = f"{contact} ({role})" if role and contact else (contact or lead.get("heirs", ""))
+        update_lead(
+            lid,
+            decedent=decedent.strip() or lead.get("decedent", ""),
+            contact_name=contact.strip(),
+            phone=phone.strip(),
+            email=email.strip(),
+            address=address.strip() or lead.get("address", ""),
+            heirs=heirs,
+            pipeline_stage=status,
+            assigned_to_branton=branton_on,
+            status="Closed" if status in CLOSED_DETAIL_STAGES else lead.get("status", "New/Hot"),
+        )
+        set_lead_notes_by_id(lid, notes, author=PARTNER_NAME if branton_on else "Scott", show_saved=True)
+        st.session_state.pop("_lead_edit_sync_id", None)
+        st.session_state.pop("_dash_notes_sync_id", None)
+        st.success("✅ Saved")
+        st.rerun()
+
+    aux1, aux2 = st.columns(2)
+    with aux1:
+        if st.button("📞 Log Call", key=f"{key_prefix}_call_{lid}", use_container_width=True):
+            log_call(lid)
+            st.rerun()
+    with aux2:
+        st.caption(f"Score **{lead.get('score', 0)}** · Case **{lead.get('case_number', '—')}**")
 
 
 def _is_high_score_lead(lead: dict) -> bool:
@@ -6176,6 +6289,80 @@ def _bq_push_row_to_branton(row: dict) -> bool:
     return True
 
 
+# ── Simple HOT append (isolated — used only by tab_add_leads) ─────────────────
+def _sw_split_blocks(text: str) -> list:
+    text = (text or "").strip()
+    if not text:
+        return []
+    return [b.strip() for b in re.split(r"\n\s*\n+", text) if b.strip()]
+
+
+def _sw_append_block_as_hot(block: str) -> None:
+    lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
+    decedent = lines[0] if lines else "New Lead"
+    if decedent.lower().startswith("estate of"):
+        decedent = decedent[9:].strip()
+    address = "Address TBD"
+    county = "Middle TN"
+    heirs = ""
+    for line in lines[1:]:
+        cm = re.search(
+            r"(Wilson|Davidson|Rutherford|Williamson|Sumner|Robertson|Cheatham|Dickson|Montgomery|Maury)\s+County",
+            line,
+            re.I,
+        )
+        if cm:
+            county = cm.group(0)
+        if re.search(r"\d", line) and not _looks_like_case_number(line):
+            address = line
+    if len(lines) > 1 and not heirs:
+        for line in lines[1:4]:
+            if line != address and not _looks_like_case_number(line) and not re.search(r"county", line, re.I):
+                heirs = line
+                break
+    phone, email = _extract_phone_email_from_text(block)
+    contact_name, contact_role = _split_poc_field(heirs) if heirs else ("", "")
+    parsed = {
+        "decedent": decedent or "New Lead",
+        "address": address,
+        "county": county,
+        "heirs": heirs,
+        "contact_name": contact_name or heirs,
+        "contact_role": contact_role,
+        "phone": phone,
+        "email": email,
+        "raw": block,
+    }
+    lead_entry = build_lead(
+        parsed,
+        pipeline_stage="🔥 Hot / New (call today)",
+        status="New/Hot",
+        score=90,
+        source="simple_add",
+        assigned_to_branton=True,
+        follow_up_days=0,
+        notes=initial_notes_from_block(block, source="Simple Add"),
+        activity=[{
+            "ts": datetime.now().isoformat(),
+            "type": "import",
+            "detail": "➕ Simple add → Branton HOT queue",
+        }],
+    )
+    lead_entry["branton_hot"] = True
+    st.session_state.leads.insert(0, lead_entry)
+
+
+def _sw_append_all_hot(text: str) -> int:
+    """Append-only — one blank-line block = one HOT lead."""
+    blocks = _sw_split_blocks(text)
+    if not blocks:
+        return 0
+    for block in blocks:
+        _sw_append_block_as_hot(block)
+    persist_leads()
+    return len(blocks)
+
+
 # ── Google Doc bulk import (isolated — used only by tab_add_leads) ────────────
 def _gi_parse_all_blocks(text: str) -> list:
     """Parse multiple Google Doc / formatted lead blocks."""
@@ -6345,66 +6532,57 @@ with tab_add_leads:
 
     st.markdown(
         '<div class="gi-import-box">'
-        "<h3>📥 Import Formatted Leads</h3>"
-        "<p>Paste your entire Google Doc — multiple leads, one block. "
-        "We parse decedent, case #, primary contact, phone, email, address, and full notes. "
-        "Append-only — never deletes existing leads or notes.</p></div>",
+        "<h3>➕ Simple Add — HOT for Branton</h3>"
+        "<p>Paste formatted leads (blank line between each). Optional PDF drop. "
+        "Append-only — never deletes or resets existing leads or notes. "
+        "Edit details anytime in Lead Detail.</p></div>",
         unsafe_allow_html=True,
     )
-    gi_paste = st.text_area(
-        "Paste entire Google Doc block here (multiple leads)",
-        height=300,
+    sw_paste = st.text_area(
+        "Paste my formatted leads here (or drag PDF)",
+        height=280,
         placeholder=(
-            "Paste one or many leads — separate with blank lines or 'Estate of…' headers.\n\n"
+            "One lead per blank line block — first line = decedent. Edit fields after import.\n\n"
             "Estate of Mary Johnson\n"
-            "PR 2024-0142\n"
             "4521 Main St, Lebanon, TN 37087\n"
             "Wilson County\n"
             "John Johnson (Executor)\n"
             "(615) 555-1212 · john@email.com\n"
-            "Muniment path, motivated heir, vacant property…\n\n"
+            "Notes / summary here…\n\n"
             "Estate of Robert Smith\n"
-            "26P571\n"
             "717 Braidwood Drive, Nashville, TN 37214\n"
             "…"
         ),
-        key="gi_bulk_paste",
+        key="sw_simple_paste",
         label_visibility="collapsed",
     )
-    if st.session_state.pop("gi_import_flash", None):
-        st.success(st.session_state.pop("gi_import_msg", ""))
+    sw_pdf = st.file_uploader(
+        "Optional — drop a PDF (text appended to paste)",
+        type=["pdf"],
+        key="sw_simple_pdf",
+    )
+    if st.session_state.pop("sw_add_flash", None):
+        st.success(st.session_state.pop("sw_add_msg", ""))
         st.balloons()
 
     st.markdown('<div class="bq-btn-green-marker"></div>', unsafe_allow_html=True)
     if st.button(
-        "📥 Import All to Branton's HOT Queue",
+        "Add as HOT for Branton",
         use_container_width=True,
         type="primary",
-        key="gi_import_hot",
+        key="sw_add_hot",
     ):
-        if not gi_paste.strip():
-            st.warning("Paste your Google Doc block first.")
+        combined = (sw_paste or "").strip()
+        if sw_pdf:
+            pdf_text = _ns_extract_pdf_text(sw_pdf.getvalue())
+            if pdf_text:
+                combined = f"{combined}\n\n{pdf_text}".strip() if combined else pdf_text
+        if not combined:
+            st.warning("Paste leads or drop a PDF first.")
         else:
-            gi_result = _gi_import_to_hot_queue(gi_paste)
-            if gi_result["added"]:
-                st.session_state.gi_import_flash = True
-                skip_note = (
-                    f" ({gi_result['skipped']} duplicates skipped)"
-                    if gi_result["skipped"] else ""
-                )
-                st.session_state.gi_import_msg = (
-                    f"✅ **{gi_result['added']}** new HOT leads added for {PARTNER_NAME}{skip_note}"
-                )
-            elif gi_result["parsed"]:
-                st.info(
-                    f"All **{gi_result['parsed']}** leads already in CRM — "
-                    "nothing duplicated, all existing data untouched."
-                )
-            else:
-                st.warning(
-                    "No leads parsed — check format: Estate of [Name], case #, address, "
-                    "primary contact on separate lines."
-                )
+            n = _sw_append_all_hot(combined)
+            st.session_state.sw_add_flash = True
+            st.session_state.sw_add_msg = f"✅ **{n}** new HOT lead{'s' if n != 1 else ''} added for {PARTNER_NAME}"
             st.rerun()
 
     st.markdown("---")
@@ -6567,10 +6745,19 @@ with tab_dashboard:
     )
 
     if st.session_state.branton_call_mode:
-        hdr_l, hdr_r = st.columns([2, 1])
+        hdr_l, hdr_m, hdr_r = st.columns([2, 1, 1])
         with hdr_l:
             st.markdown("## 📞 Branton Call Mode")
             st.caption("Focus only — hottest Crusher leads. Call, text, move pipeline.")
+        with hdr_m:
+            if st.button(
+                "🔥 Edit Mode",
+                key="enter_edit_mode",
+                use_container_width=True,
+                type="primary",
+            ):
+                st.session_state.crm_edit_mode = True
+                st.rerun()
         with hdr_r:
             st.button(
                 "Exit Call Mode — Back to Full System",
@@ -6601,6 +6788,20 @@ with tab_dashboard:
         hot_leads = _nj_apply_hot_qualified_filter(
             get_branton_call_mode_leads(get_leads(), limit=10)
         )
+        if st.session_state.get("crm_edit_mode"):
+            st.markdown("---")
+            st.markdown("### 🔥 Edit Mode")
+            if hot_leads:
+                if st.session_state.get("crm_selected_lead_id") not in {l["id"] for l in hot_leads}:
+                    st.session_state.crm_selected_lead_id = hot_leads[0]["id"]
+                edit_lead = find_lead(st.session_state.get("crm_selected_lead_id")) or hot_leads[0]
+                _render_lead_detail_editor(edit_lead, nav_list=hot_leads, key_prefix="cm_edit")
+                if st.button("Done Editing", key="exit_edit_mode", use_container_width=True):
+                    st.session_state.crm_edit_mode = False
+                    st.rerun()
+            else:
+                st.info("No leads in queue — add leads first, then use Edit Mode.")
+            st.markdown("---")
         if not hot_leads:
             st.info("No hot leads yet — paste above and tap **Push Hottest**, or use the Crusher tab.")
         for lead in hot_leads:
@@ -6848,138 +7049,7 @@ with tab_dashboard:
                 lead = find_lead(selected_id)
 
                 with detail_col:
-                    if not lead:
-                        st.markdown("#### Lead Detail & Edit")
-                        st.info("Select a lead from the list.")
-                    else:
-                        _render_lead_primary_contact(lead, detail=True)
-                        st.markdown("#### Lead Detail & Edit")
-                        e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
-                        current_stage = detail_pipeline_stage(lead)
-                        with e1:
-                            new_stage = st.selectbox(
-                                "Pipeline Stage",
-                                DETAIL_PIPELINE_STAGES,
-                                index=DETAIL_PIPELINE_STAGES.index(current_stage),
-                                key=f"stage_{lead['id']}",
-                                on_change=_on_detail_pipeline_change,
-                                args=(lead["id"],),
-                            )
-                        with e2:
-                            fu_label = "Next Follow-up Date" if new_stage == NURTURE_STAGE else "Follow-Up"
-                            new_fu = st.date_input(
-                                fu_label,
-                                value=datetime.strptime(lead.get("follow_up_iso", follow_up_iso()), "%Y-%m-%d").date(),
-                                key=f"fu_{lead['id']}",
-                            )
-                        with e3:
-                            branton_toggle = st.toggle(
-                                f"Assign to {PARTNER_NAME}",
-                                value=bool(lead.get("assigned_to_branton")),
-                                key=f"branton_{lead['id']}",
-                            )
-                        with e4:
-                            st.metric("Calls", lead.get("calls", 0))
-
-                        st.markdown('<div class="crm-quick-stage-start"></div>', unsafe_allow_html=True)
-                        qs1, qs2, qs3, qs4, qs5 = st.columns(5, gap="small")
-                        with qs1:
-                            st.button(
-                                "🔥 Move to Hot",
-                                key=f"qhot_{lead['id']}",
-                                use_container_width=True,
-                                type="primary",
-                                on_click=_quick_stage_callback,
-                                args=(lead["id"], "🔥 Hot / New (call today)"),
-                            )
-                        with qs2:
-                            st.button(
-                                "Move to Warm",
-                                key=f"qwarm_{lead['id']}",
-                                use_container_width=True,
-                                on_click=_quick_stage_callback,
-                                args=(lead["id"], "Warm / Talking"),
-                            )
-                        with qs3:
-                            st.button(
-                                "Set Appointment",
-                                key=f"qappt_{lead['id']}",
-                                use_container_width=True,
-                                on_click=_quick_stage_callback,
-                                args=(lead["id"], "Appointment Set"),
-                            )
-                        with qs4:
-                            st.button(
-                                "Not Interested",
-                                key=f"qni_{lead['id']}",
-                                use_container_width=True,
-                                on_click=_quick_stage_callback,
-                                args=(lead["id"], "Not Interested / Keeping"),
-                            )
-                        with qs5:
-                            st.button(
-                                "Archive",
-                                key=f"qarch_{lead['id']}",
-                                use_container_width=True,
-                                on_click=_quick_stage_callback,
-                                args=(lead["id"], "Archived"),
-                            )
-
-                        st.caption(
-                            f"**{lead.get('decedent', 'Unknown')}** · {lead.get('address', '—')} · "
-                            f"Score **{lead.get('score', 0)}** · {lead.get('county', '—')}"
-                        )
-
-                        note_text = st.text_area(
-                            "Add Note",
-                            key=f"note_{lead['id']}",
-                            placeholder="Call outcome, heir feedback, next steps...",
-                        )
-                        b1, b2, b3, b4 = st.columns(4)
-                        with b1:
-                            if st.button("💾 Save Changes", key=f"save_{lead['id']}", use_container_width=True, type="primary"):
-                                _flush_dash_notes(lead["id"], show_saved=True)
-                                update_lead(
-                                    lead["id"],
-                                    pipeline_stage=new_stage,
-                                    follow_up_iso=new_fu.strftime("%Y-%m-%d"),
-                                    assigned_to_branton=branton_toggle,
-                                    status="Closed" if new_stage in CLOSED_DETAIL_STAGES else lead.get("status", "New"),
-                                )
-                                if note_text.strip():
-                                    add_note(lead["id"], note_text, author=PARTNER_NAME if branton_toggle else "Scott")
-                                st.session_state.pop("_dash_notes_sync_id", None)
-                                st.rerun()
-                        with b2:
-                            if st.button("📞 Log Call", key=f"call_{lead['id']}", use_container_width=True):
-                                _flush_dash_notes(lead["id"], show_saved=True)
-                                log_call(lead["id"])
-                                st.rerun()
-                        with b3:
-                            if st.button("⬆️ → Warm", key=f"warm_{lead['id']}", use_container_width=True):
-                                _flush_dash_notes(lead["id"], show_saved=True)
-                                update_lead(lead["id"], pipeline_stage="Warm / Talking", status="Contacted")
-                                st.rerun()
-                        with b4:
-                            if st.button("🗑️ Remove", key=f"del_{lead['id']}", use_container_width=True):
-                                _flush_dash_notes(lead["id"], show_saved=True)
-                                st.session_state.leads = [l for l in st.session_state.leads if l["id"] != lead["id"]]
-                                persist_leads()
-                                st.session_state.pop("crm_selected_lead_id", None)
-                                st.session_state.pop("_dash_notes_sync_id", None)
-                                st.rerun()
-
-                        _render_lead_notes_editor(lead)
-                        if lead.get("days_since_death") is not None:
-                            st.caption(
-                                f"Death ~{lead.get('days_since_death')} days ago · "
-                                f"Status: **{lead.get('status', '—')}** · Pipeline: **{lead.get('pipeline_stage', '—')}**"
-                            )
-
-                        if lead.get("activity"):
-                            st.markdown("**Activity**")
-                            for act in lead["activity"][:5]:
-                                st.caption(f"{act.get('ts', '')[:16]} · {act.get('type', '')} · {act.get('detail', '')}")
+                    _render_lead_detail_editor(lead, nav_list=list_filtered, key_prefix="dash")
 
     # ══════════════════════════════════════════════════════════════════════════════
 # TAB — 💰 90-Day Probate Crusher
