@@ -1612,16 +1612,17 @@ _NJ_JUNK_DECEDENT_EXACT = {
     "notice to creditors address tbd", "as required address tbd",
     "benton county probate division",
 }
+_NJ_CONTACT_FIELDS = ("decedent", "contact_name", "heirs")
+_NJ_JUNK_SCORE_CEILING = 10
 
 
-def _nj_lead_text_blob(lead: dict) -> str:
-    parts = [
-        str(lead.get(k, ""))
-        for k in ("decedent", "address", "heirs", "contact_name", "raw", "county", "case_number")
-    ]
-    for note in lead.get("notes") or []:
-        parts.append(note.get("text", "") if isinstance(note, dict) else str(note))
-    return "\n".join(parts)
+def _nj_has_junk_marker_in_contact_fields(lead: dict) -> bool:
+    for field in _NJ_CONTACT_FIELDS:
+        val = lead.get(field) or ""
+        for marker in _NJ_JUNK_MARKERS:
+            if marker in val:
+                return True
+    return False
 
 
 def _nj_has_real_decedent(lead: dict) -> bool:
@@ -1629,7 +1630,7 @@ def _nj_has_real_decedent(lead: dict) -> bool:
     if not dec or dec.lower() in _NJ_JUNK_DECEDENT_EXACT:
         return False
     for marker in _NJ_JUNK_MARKERS:
-        if marker.lower() in dec.lower():
+        if marker in dec:
             return False
     if re.search(r"notice\s+to\s+creditors|probate\s+division|as\s+required", dec, re.I):
         return False
@@ -1657,29 +1658,23 @@ def _nj_is_hot_queue_pushed(lead: dict) -> bool:
     return False
 
 
-def _nj_is_protected_lead(lead: dict) -> bool:
-    return _nj_has_real_decedent(lead) or _nj_has_real_address(lead) or _nj_is_hot_queue_pushed(lead)
-
-
 def _nj_is_junk_lead(lead: dict) -> bool:
-    if _nj_is_protected_lead(lead):
-        return False
-    blob = _nj_lead_text_blob(lead)
-    if any(marker in blob for marker in _NJ_JUNK_MARKERS):
+    if _nj_has_junk_marker_in_contact_fields(lead):
         return True
-    if not _nj_has_real_decedent(lead):
-        return True
-    if int(lead.get("score") or 0) == 0:
+    if not _nj_has_real_decedent(lead) and int(lead.get("score") or 0) < _NJ_JUNK_SCORE_CEILING:
         return True
     return False
 
 
 def _nj_nuke_junk_leads() -> dict:
     leads = get_leads()
+    junk = [l for l in leads if _nj_is_junk_lead(l)]
     kept = [l for l in leads if not _nj_is_junk_lead(l)]
-    removed = len(leads) - len(kept)
-    st.session_state.leads = kept
-    persist_leads()
+    removed = len(junk)
+    if removed:
+        st.session_state.leads = kept
+        persist_leads()
+    st.session_state.crm_hot_only_filter = True
     return {"removed": removed, "kept": len(kept)}
 
 
@@ -7904,27 +7899,46 @@ with tab_newspaper:
         pass  # shown inline above
 
     st.markdown("---")
-    st.markdown("#### 🧹 Empire Mode Cleanup")
-    st.caption(
-        "Deletes **test/junk scraper rows only** — never touches leads with a real decedent, "
-        "real address, or anything pushed to Branton's HOT queue. All notes stay on kept leads."
-    )
+    st.markdown("#### 🧹 Ultra-Safe Junk NUKE")
     _nj_candidates = [l for l in get_leads() if _nj_is_junk_lead(l)]
+    _nj_protected_n = len(get_leads()) - len(_nj_candidates)
     st.caption(
-        f"Junk candidates: **{len(_nj_candidates)}** · Protected: "
-        f"**{len(get_leads()) - len(_nj_candidates)}**"
+        f"Scans decedent + contact fields only · Junk flagged: **{len(_nj_candidates)}** · "
+        f"Protected: **{_nj_protected_n}**"
     )
-    if st.button(
-        "🧹 NUKE Junk Test Leads Only",
+
+    if st.session_state.get("ns_nuke_confirm_pending"):
+        _nj_x = st.session_state.get("ns_nuke_confirm_count", 0)
+        st.warning(
+            f"Deleting **{_nj_x}** junk leads only — all real leads + all Branton notes "
+            "stay 100% safe. Confirm?"
+        )
+        _nj_c1, _nj_c2 = st.columns(2)
+        with _nj_c1:
+            if st.button("✅ Confirm NUKE", type="primary", use_container_width=True, key="ns_nuke_confirm"):
+                _nj_result = _nj_nuke_junk_leads()
+                st.session_state.pop("ns_nuke_confirm_pending", None)
+                st.session_state.pop("ns_nuke_confirm_count", None)
+                st.session_state.ns_nuke_flash = (
+                    f"🧹 Removed **{_nj_result['removed']}** junk leads. "
+                    f"**{_nj_result['kept']}** real leads + every Branton note intact. "
+                    "Dashboard → 🔥 HOT / Qualified Only view ON."
+                )
+                st.rerun()
+        with _nj_c2:
+            if st.button("Cancel", use_container_width=True, key="ns_nuke_cancel"):
+                st.session_state.pop("ns_nuke_confirm_pending", None)
+                st.session_state.pop("ns_nuke_confirm_count", None)
+                st.rerun()
+    elif st.button(
+        "🧹 NUKE ALL JUNK TEST LEADS NOW",
         use_container_width=True,
         key="ns_nuke_junk",
     ):
-        _nj_result = _nj_nuke_junk_leads()
-        st.session_state.ns_nuke_flash = (
-            f"🧹 Removed **{_nj_result['removed']}** junk leads. "
-            f"**{_nj_result['kept']}** real leads + every note intact."
-        )
+        st.session_state.ns_nuke_confirm_pending = True
+        st.session_state.ns_nuke_confirm_count = len(_nj_candidates)
         st.rerun()
+
     if st.session_state.get("ns_nuke_flash"):
         st.success(st.session_state.pop("ns_nuke_flash"))
 
