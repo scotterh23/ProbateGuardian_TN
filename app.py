@@ -1613,7 +1613,37 @@ _NJ_JUNK_DECEDENT_EXACT = {
     "benton county probate division",
 }
 _NJ_CONTACT_FIELDS = ("decedent", "contact_name", "heirs")
+_NJ_HIDE_MARKERS = (
+    "Contact TBD",
+    "Benton County Probate Division",
+    "Address TBD",
+)
+_NJ_HIDE_SCAN_FIELDS = ("decedent", "contact_name", "heirs", "address")
 _NJ_JUNK_SCORE_CEILING = 10
+
+
+def _nj_is_hide_junk_lead(lead: dict) -> bool:
+    for field in _NJ_HIDE_SCAN_FIELDS:
+        val = lead.get(field) or ""
+        for marker in _NJ_HIDE_MARKERS:
+            if marker in val:
+                return True
+    if not _nj_has_real_decedent(lead):
+        return True
+    return False
+
+
+def _nj_hide_all_junk() -> dict:
+    hidden_now = 0
+    for lead in st.session_state.leads:
+        if _nj_is_hide_junk_lead(lead) and not lead.get("branton_hidden"):
+            lead["branton_hidden"] = True
+            hidden_now += 1
+    if hidden_now:
+        persist_leads()
+    st.session_state.crm_hot_only_filter = True
+    total_hidden = sum(1 for l in get_leads() if l.get("branton_hidden"))
+    return {"hidden_now": hidden_now, "total_hidden": total_hidden}
 
 
 def _nj_has_junk_marker_in_contact_fields(lead: dict) -> bool:
@@ -1690,10 +1720,18 @@ def _nj_is_qualified_hot_lead(lead: dict) -> bool:
     return False
 
 
+def _nj_passes_branton_view(lead: dict) -> bool:
+    if lead.get("branton_hidden"):
+        return False
+    if _nj_is_qualified_hot_lead(lead):
+        return True
+    return _nj_has_real_decedent(lead)
+
+
 def _nj_apply_hot_qualified_filter(leads: list) -> list:
     if not st.session_state.get("crm_hot_only_filter", True):
-        return leads
-    return [l for l in leads if _nj_is_qualified_hot_lead(l)]
+        return [l for l in leads if not l.get("branton_hidden")]
+    return [l for l in leads if _nj_passes_branton_view(l)]
 
 
 def _filter_leads_due_today(leads: list) -> list:
@@ -6351,7 +6389,7 @@ with tab_dashboard:
     st.session_state.setdefault("call_mode_panel", {})
     st.session_state.setdefault("crm_hot_only_filter", True)
     st.toggle(
-        "🔥 Branton View — Show Only HOT/Qualified",
+        "🔥 Branton View — Show ONLY HOT / Real Leads",
         key="crm_hot_only_filter",
     )
 
@@ -6593,7 +6631,10 @@ with tab_dashboard:
 
             filter_bits = []
             if st.session_state.get("crm_hot_only_filter", True):
-                filter_bits.append("🔥 HOT / Qualified only")
+                filter_bits.append("🔥 HOT / Real only")
+            hidden_n = sum(1 for l in st.session_state.leads if l.get("branton_hidden"))
+            if hidden_n:
+                filter_bits.append(f"{hidden_n} hidden")
             if st.session_state.get("crm_list_mode") == "due_today":
                 filter_bits.append("due today + 🔥 Hot")
             elif pipe_filter != "All":
@@ -7897,6 +7938,30 @@ with tab_newspaper:
     hermes_idx = st.session_state.get("ns_hermes_row")
     if hermes_idx is not None and ns_results and hermes_idx < len(ns_results):
         pass  # shown inline above
+
+    st.markdown("---")
+    st.markdown("#### 👁️ Safe Hide (no delete)")
+    _nj_hide_candidates = [l for l in get_leads() if _nj_is_hide_junk_lead(l) and not l.get("branton_hidden")]
+    st.caption(
+        f"Hides junk from Branton's view only — nothing deleted, all notes stay. "
+        f"Ready to hide: **{len(_nj_hide_candidates)}** · "
+        f"Already hidden: **{sum(1 for l in get_leads() if l.get('branton_hidden'))}**"
+    )
+    if st.button(
+        "👁️ HIDE ALL JUNK NOW (safe)",
+        use_container_width=True,
+        key="ns_hide_junk",
+    ):
+        _hj = _nj_hide_all_junk()
+        st.session_state.ns_hide_flash = (
+            f"👁️ Hidden **{_hj['hidden_now']}** junk leads "
+            f"({_hj['total_hidden']} total hidden). "
+            "All real leads + every Branton note untouched. "
+            "Dashboard → 🔥 Branton View ON."
+        )
+        st.rerun()
+    if st.session_state.get("ns_hide_flash"):
+        st.success(st.session_state.pop("ns_hide_flash"))
 
     st.markdown("---")
     st.markdown("#### 🧹 Ultra-Safe Junk NUKE")
