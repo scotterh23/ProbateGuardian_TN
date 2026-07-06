@@ -6176,6 +6176,113 @@ def _bq_push_row_to_branton(row: dict) -> bool:
     return True
 
 
+# ── Google Doc bulk import (isolated — used only by tab_add_leads) ────────────
+def _gi_parse_all_blocks(text: str) -> list:
+    """Parse multiple Google Doc / formatted lead blocks."""
+    rows = []
+    seen = set()
+    for block in split_batch_text(text):
+        block = (block or "").strip()
+        if not block:
+            continue
+        parsed = parse_lead_enhanced(block)
+        decedent = (parsed.get("decedent") or "").strip()
+        if not decedent or decedent == "Unknown Decedent":
+            continue
+        address = (parsed.get("address") or "").strip()
+        if not address or address == "Address TBD":
+            fallback = parse_lead(block)
+            if fallback.get("address") and fallback["address"] != "Address TBD":
+                parsed["address"] = fallback["address"]
+                address = parsed["address"]
+            else:
+                continue
+        enrich_lead_phones(parsed)
+        if not parsed.get("phone"):
+            bp, _ = _extract_phone_email_from_text(block)
+            parsed["phone"] = bp
+        if not parsed.get("email"):
+            _, be = _extract_phone_email_from_text(block)
+            parsed["email"] = be
+        if not parsed.get("case_number"):
+            cm = CRUSHER_CASE_RE.search(block)
+            if cm:
+                parsed["case_number"] = re.sub(r"\s+", "", cm.group(1).upper())
+            m2 = re.search(r"\b(26P\d+)\b", block, re.I)
+            if m2 and not parsed.get("case_number"):
+                parsed["case_number"] = m2.group(1).upper()
+        parsed["summary"] = block
+        parsed["raw"] = block
+        key = (
+            (parsed.get("case_number") or "").upper(),
+            decedent.lower(),
+            address.lower(),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append(parsed)
+    return rows
+
+
+def _gi_lead_already_exists(parsed: dict) -> bool:
+    case = (parsed.get("case_number") or "").strip().upper()
+    dec = (parsed.get("decedent") or "").lower().strip()
+    addr = (parsed.get("address") or "").lower().strip()
+    for lead in get_leads():
+        if case and case == (lead.get("case_number") or "").strip().upper():
+            return True
+        if dec and addr and dec == (lead.get("decedent") or "").lower().strip():
+            if addr == (lead.get("address") or "").lower().strip():
+                return True
+    return False
+
+
+def _gi_import_to_hot_queue(text: str) -> dict:
+    """Append-only — adds new HOT leads, never deletes or resets."""
+    parsed_rows = _gi_parse_all_blocks(text)
+    added = 0
+    skipped = 0
+    for parsed in parsed_rows:
+        if _gi_lead_already_exists(parsed):
+            skipped += 1
+            continue
+        base_score, _, _ = score_lead(parsed)
+        hot_score = max(base_score, 90)
+        summary = (parsed.get("summary") or parsed.get("raw") or "").strip()
+        notes_blob = (
+            f"📥 Google Doc Import • 🔥 HOT\n\n"
+            f"Case #: {parsed.get('case_number') or '—'}\n"
+            f"Primary Contact: {parsed.get('contact_name') or parsed.get('heirs') or '—'}\n"
+            f"Phone: {parsed.get('phone') or '—'}\n"
+            f"Email: {parsed.get('email') or '—'}\n"
+            f"Address: {parsed.get('address') or '—'}\n"
+            f"County: {parsed.get('county') or '—'}\n\n"
+            f"SUMMARY / NOTES:\n{summary}"
+        ).strip()
+        lead_entry = build_lead(
+            parsed,
+            pipeline_stage="🔥 Hot / New (call today)",
+            status="New/Hot",
+            score=hot_score,
+            source="google_doc_import",
+            assigned_to_branton=True,
+            follow_up_days=0,
+            notes=initial_notes_from_block(notes_blob, source="Google Doc Import"),
+            activity=[{
+                "ts": datetime.now().isoformat(),
+                "type": "import",
+                "detail": "📥 Google Doc → Branton HOT queue",
+            }],
+        )
+        lead_entry["branton_hot"] = True
+        st.session_state.leads.insert(0, lead_entry)
+        added += 1
+    if added:
+        persist_leads()
+    return {"added": added, "skipped": skipped, "parsed": len(parsed_rows)}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB — Add New Leads (Bulk Qualifier)
 # ══════════════════════════════════════════════════════════════════════════════
@@ -6222,10 +6329,85 @@ with tab_add_leads:
             padding: 0.65rem 0.75rem;
             margin-bottom: 0.55rem;
         }
+        .gi-import-box {
+            background: linear-gradient(135deg, #0d2818 0%, #161b22 100%);
+            border: 2px solid #3fb950;
+            border-radius: 14px;
+            padding: 1rem 1.1rem;
+            margin-bottom: 1rem;
+        }
+        .gi-import-box h3 { margin: 0 0 0.35rem 0; color: #aff5b4; font-size: 1.2rem; }
+        .gi-import-box p { margin: 0 0 0.75rem 0; color: #8b949e; font-size: 0.88rem; }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+    st.markdown(
+        '<div class="gi-import-box">'
+        "<h3>📥 Import Formatted Leads</h3>"
+        "<p>Paste your entire Google Doc — multiple leads, one block. "
+        "We parse decedent, case #, primary contact, phone, email, address, and full notes. "
+        "Append-only — never deletes existing leads or notes.</p></div>",
+        unsafe_allow_html=True,
+    )
+    gi_paste = st.text_area(
+        "Paste entire Google Doc block here (multiple leads)",
+        height=300,
+        placeholder=(
+            "Paste one or many leads — separate with blank lines or 'Estate of…' headers.\n\n"
+            "Estate of Mary Johnson\n"
+            "PR 2024-0142\n"
+            "4521 Main St, Lebanon, TN 37087\n"
+            "Wilson County\n"
+            "John Johnson (Executor)\n"
+            "(615) 555-1212 · john@email.com\n"
+            "Muniment path, motivated heir, vacant property…\n\n"
+            "Estate of Robert Smith\n"
+            "26P571\n"
+            "717 Braidwood Drive, Nashville, TN 37214\n"
+            "…"
+        ),
+        key="gi_bulk_paste",
+        label_visibility="collapsed",
+    )
+    if st.session_state.pop("gi_import_flash", None):
+        st.success(st.session_state.pop("gi_import_msg", ""))
+        st.balloons()
+
+    st.markdown('<div class="bq-btn-green-marker"></div>', unsafe_allow_html=True)
+    if st.button(
+        "📥 Import All to Branton's HOT Queue",
+        use_container_width=True,
+        type="primary",
+        key="gi_import_hot",
+    ):
+        if not gi_paste.strip():
+            st.warning("Paste your Google Doc block first.")
+        else:
+            gi_result = _gi_import_to_hot_queue(gi_paste)
+            if gi_result["added"]:
+                st.session_state.gi_import_flash = True
+                skip_note = (
+                    f" ({gi_result['skipped']} duplicates skipped)"
+                    if gi_result["skipped"] else ""
+                )
+                st.session_state.gi_import_msg = (
+                    f"✅ **{gi_result['added']}** new HOT leads added for {PARTNER_NAME}{skip_note}"
+                )
+            elif gi_result["parsed"]:
+                st.info(
+                    f"All **{gi_result['parsed']}** leads already in CRM — "
+                    "nothing duplicated, all existing data untouched."
+                )
+            else:
+                st.warning(
+                    "No leads parsed — check format: Estate of [Name], case #, address, "
+                    "primary contact on separate lines."
+                )
+            st.rerun()
+
+    st.markdown("---")
 
     st.markdown(
         '<div class="bq-hero">'
