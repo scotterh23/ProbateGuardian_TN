@@ -278,6 +278,19 @@ st.markdown(
         line-height: 1.25 !important;
         padding: 0.55rem 0.45rem !important;
     }
+    .crm-drip-start { display: none; }
+    .crm-drip-start + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button,
+    .crm-drip-start + div[data-testid="stHorizontalBlock"] + div[data-testid="stHorizontalBlock"] [data-testid="stButton"] > button {
+        min-height: 3.35rem !important;
+        font-size: 0.92rem !important;
+        font-weight: 700 !important;
+        white-space: normal !important;
+        line-height: 1.25 !important;
+        background: linear-gradient(135deg, #238636, #3fb950) !important;
+        color: #ffffff !important;
+        border: none !important;
+        box-shadow: 0 4px 14px rgba(63, 185, 80, 0.35) !important;
+    }
     .crusher-glow-marker { display: none; }
     .crusher-glow-marker + div [data-testid="stTextArea"] textarea {
         min-height: 14rem !important;
@@ -1760,8 +1773,8 @@ def _render_quick_drip_section(lead: dict, key_prefix: str = "dash") -> None:
 
     st.markdown("---")
     st.markdown(
-        '<p style="font-size:1.15rem;font-weight:900;color:#58a6ff;margin:0.5rem 0 0.25rem 0;">'
-        "📧 Quick Drip</p>",
+        '<p style="font-size:1.15rem;font-weight:900;color:#3fb950;margin:0.5rem 0 0.25rem 0;">'
+        "📧 Quick Drip – One-Click Follow-up</p>",
         unsafe_allow_html=True,
     )
     st.caption(
@@ -1769,6 +1782,7 @@ def _render_quick_drip_section(lead: dict, key_prefix: str = "dash") -> None:
         f"{DEDICATED_PHONE}, Guardian Kit."
     )
 
+    st.markdown('<div class="crm-drip-start"></div>', unsafe_allow_html=True)
     d1, d2 = st.columns(2)
     for idx, (cid, label, _hint) in enumerate(_DRIP_CAMPAIGNS):
         col = d1 if idx % 2 == 0 else d2
@@ -1777,7 +1791,7 @@ def _render_quick_drip_section(lead: dict, key_prefix: str = "dash") -> None:
                 label,
                 key=f"{key_prefix}_drip_btn_{cid}_{lid}",
                 use_container_width=True,
-                type="secondary",
+                type="primary",
             ):
                 st.session_state[pending_key] = cid
                 st.session_state.pop(sent_key, None)
@@ -1843,7 +1857,14 @@ def _sync_lead_edit_form(lead: dict, key_prefix: str) -> None:
     st.session_state[f"{key_prefix}_email_{lid}"] = lead.get("email", "")
     st.session_state[f"{key_prefix}_addr_{lid}"] = lead.get("address", "")
     stage = detail_pipeline_stage(lead)
-    st.session_state[f"{key_prefix}_status_{lid}"] = stage
+    st.session_state[f"stage_{lid}"] = stage
+    st.session_state[f"branton_{lid}"] = bool(lead.get("assigned_to_branton"))
+    try:
+        st.session_state[f"fu_{lid}"] = datetime.strptime(
+            lead.get("follow_up_iso", follow_up_iso()), "%Y-%m-%d"
+        ).date()
+    except ValueError:
+        st.session_state[f"fu_{lid}"] = datetime.strptime(follow_up_iso(), "%Y-%m-%d").date()
     st.session_state[f"{key_prefix}_notes_{lid}"] = get_lead_notes_full_text(lead)
     st.session_state["_lead_edit_sync_id"] = lid
 
@@ -1883,8 +1904,6 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
         with nav_r:
             st.caption(f"Lead **{idx + 1}** of **{len(nav_list)}** · {lead.get('county', '—')}")
 
-    _render_quick_drip_section(lead, key_prefix)
-
     st.markdown("#### Lead Detail & Edit")
     st.markdown(
         '<p style="font-size:1.05rem;font-weight:800;color:#aff5b4;margin:0 0 0.25rem 0;">'
@@ -1904,8 +1923,76 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
     with em_col:
         email = st.text_input("Email", key=f"{key_prefix}_email_{lid}")
     address = st.text_input("Address", key=f"{key_prefix}_addr_{lid}")
-    status = st.selectbox("Status", DETAIL_PIPELINE_STAGES, key=f"{key_prefix}_status_{lid}")
     notes = st.text_area("Notes", height=240, key=f"{key_prefix}_notes_{lid}")
+
+    e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
+    with e1:
+        status = st.selectbox(
+            "Pipeline Stage",
+            DETAIL_PIPELINE_STAGES,
+            key=f"stage_{lid}",
+            on_change=_on_detail_pipeline_change,
+            args=(lid,),
+        )
+    with e2:
+        fu_label = "Next Follow-up Date" if status == NURTURE_STAGE else "Follow-Up"
+        new_fu = st.date_input(
+            fu_label,
+            key=f"fu_{lid}",
+        )
+    with e3:
+        branton_on = st.toggle(
+            f"Assign to {PARTNER_NAME}",
+            key=f"branton_{lid}",
+        )
+    with e4:
+        st.metric("Calls", lead.get("calls", 0))
+
+    st.markdown('<div class="crm-quick-stage-start"></div>', unsafe_allow_html=True)
+    qs1, qs2, qs3, qs4, qs5 = st.columns(5, gap="small")
+    with qs1:
+        st.button(
+            "🔥 Move to Hot",
+            key=f"qhot_{lid}",
+            use_container_width=True,
+            type="primary",
+            on_click=_quick_stage_callback,
+            args=(lid, "🔥 Hot / New (call today)"),
+        )
+    with qs2:
+        st.button(
+            "Move to Warm",
+            key=f"qwarm_{lid}",
+            use_container_width=True,
+            on_click=_quick_stage_callback,
+            args=(lid, "Warm / Talking"),
+        )
+    with qs3:
+        st.button(
+            "Set Appointment",
+            key=f"qappt_{lid}",
+            use_container_width=True,
+            on_click=_quick_stage_callback,
+            args=(lid, "Appointment Set"),
+        )
+    with qs4:
+        st.button(
+            "Not Interested",
+            key=f"qni_{lid}",
+            use_container_width=True,
+            on_click=_quick_stage_callback,
+            args=(lid, "Not Interested / Keeping"),
+        )
+    with qs5:
+        st.button(
+            "Archive",
+            key=f"qarch_{lid}",
+            use_container_width=True,
+            on_click=_quick_stage_callback,
+            args=(lid, "Archived"),
+        )
+
+    _render_quick_drip_section(lead, key_prefix)
 
     if st.button(
         "💾 Save Changes",
@@ -1924,12 +2011,14 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
             address=address.strip() or lead.get("address", ""),
             heirs=heirs,
             pipeline_stage=status,
+            follow_up_iso=new_fu.strftime("%Y-%m-%d"),
+            assigned_to_branton=branton_on,
             status="Closed" if status in CLOSED_DETAIL_STAGES else lead.get("status", "New/Hot"),
         )
         set_lead_notes_by_id(
             lid,
             notes,
-            author=PARTNER_NAME if lead.get("assigned_to_branton") else "Scott",
+            author=PARTNER_NAME if branton_on else "Scott",
             show_saved=True,
         )
         st.session_state.pop("_lead_edit_sync_id", None)
