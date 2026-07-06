@@ -6700,7 +6700,8 @@ def _bq_push_row_to_branton(row: dict) -> bool:
 
 # ── Simple HOT append (isolated — used only by tab_add_leads) ─────────────────
 _SW_SCOTT_LABEL_RE = re.compile(
-    r"^(Lead|Best Contact|Primary Contact|Phone|Email|Address|Status|Summary|Notes)\s*:\s*(.*)$",
+    r"^(Lead|Best Contact|Primary Contact|Best Person to Call|Phone|Email|Address|Status|Summary|Notes)"
+    r"\s*:\s*(.*)$",
     re.I,
 )
 _SW_COUNTY_RE = re.compile(
@@ -6710,17 +6711,31 @@ _SW_COUNTY_RE = re.compile(
     r"Fentress|Clay|Jackson|Macon|Trousdale)\s+County",
     re.I,
 )
+_SW_HOT_STATUS_RE = re.compile(r"(?:status\s*:\s*)?🔥?\s*hot\b", re.I)
+_SW_CONTACT_LABELS = frozenset({"best_contact", "primary_contact", "best_person_to_call"})
 
 
-def _sw_split_blocks(text: str) -> list:
-    text = (text or "").strip()
-    if not text:
-        return []
-    return [b.strip() for b in re.split(r"\n\s*\n+", text) if b.strip()]
+def _sw_clean_address(addr: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (addr or "").strip())
+    cleaned = re.sub(r",\s*,", ", ", cleaned)
+    cleaned = re.sub(r"\s+,", ",", cleaned)
+    return cleaned.strip(" ,")
+
+
+def _sw_line_looks_like_address(line: str) -> bool:
+    if not line or _SW_SCOTT_LABEL_RE.match(line):
+        return False
+    if CRUSHER_STREET_RE.search(line):
+        return True
+    return bool(re.search(
+        r"\d+\s+\w+.*(?:\b(?:st|street|rd|road|ave|avenue|dr|drive|ln|lane|ct|court|way|blvd|pike)\b|,\s*tn\b|\b\d{5}\b)",
+        line,
+        re.I,
+    ))
 
 
 def _sw_parse_scott_formatted_block(block: str) -> dict:
-    """Parse Scott's labeled lead format into structured CRM fields."""
+    """Parse Scott's full formatted paste as ONE lead — extremely robust field mapping."""
     block = (block or "").strip()
     result = {
         "decedent": "",
@@ -6740,8 +6755,10 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
     lines = block.splitlines()
     notes_lines = []
     in_notes = False
+    used_line_idxs = set()
+    prose_start_idx = None
 
-    for line in lines:
+    for i, line in enumerate(lines):
         stripped = line.strip()
         if not stripped:
             if in_notes:
@@ -6752,18 +6769,19 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
         if m:
             label = m.group(1).lower().replace(" ", "_")
             value = m.group(2).strip()
+            used_line_idxs.add(i)
             in_notes = False
 
             if label == "lead":
                 result["decedent"] = value
-            elif label in ("best_contact", "primary_contact"):
+            elif label in _SW_CONTACT_LABELS:
                 result["contact_name"] = value
             elif label == "phone":
                 result["phone"] = value
             elif label == "email":
                 result["email"] = value
             elif label == "address":
-                result["address"] = value
+                result["address"] = _sw_clean_address(value)
             elif label == "status":
                 low = value.lower()
                 result["is_hot"] = "hot" in low or "🔥" in value or "new" in low
@@ -6773,24 +6791,58 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
                     notes_lines.append(value)
             continue
 
+        if _SW_HOT_STATUS_RE.search(stripped):
+            result["is_hot"] = True
+            used_line_idxs.add(i)
+            continue
+
         if in_notes:
             notes_lines.append(stripped)
+            used_line_idxs.add(i)
+            continue
+
+        if not result["address"] and _sw_line_looks_like_address(stripped):
+            result["address"] = _sw_clean_address(stripped)
+            used_line_idxs.add(i)
+            continue
+
+        if prose_start_idx is None and len(stripped) >= 48:
+            prose_start_idx = i
 
     if not result["decedent"]:
-        for ln in lines:
+        for i, ln in enumerate(lines):
             ln = ln.strip()
-            if not ln or _SW_SCOTT_LABEL_RE.match(ln):
+            if not ln or i in used_line_idxs or _SW_SCOTT_LABEL_RE.match(ln):
                 continue
             estate_m = re.match(r"^estate\s+of\s+(.+?)(?:,?\s*deceased)?$", ln, re.I)
             if estate_m:
                 result["decedent"] = estate_m.group(1).strip().rstrip(",")
+                used_line_idxs.add(i)
                 break
-            result["decedent"] = ln
-            break
+            if not re.search(r"[@\d]{3}", ln):
+                result["decedent"] = ln
+                used_line_idxs.add(i)
+                break
 
     result["notes_text"] = "\n".join(notes_lines).strip()
     if not result["notes_text"]:
+        remainder = []
+        for i, ln in enumerate(lines):
+            s = ln.strip()
+            if not s or i in used_line_idxs or _SW_SCOTT_LABEL_RE.match(s):
+                continue
+            remainder.append(s)
+        if remainder:
+            result["notes_text"] = "\n".join(remainder).strip()
+        elif prose_start_idx is not None:
+            result["notes_text"] = "\n".join(
+                lines[j].strip() for j in range(prose_start_idx, len(lines)) if lines[j].strip()
+            ).strip()
+    if not result["notes_text"]:
         result["notes_text"] = block
+
+    if _SW_HOT_STATUS_RE.search(block):
+        result["is_hot"] = True
 
     county_m = _SW_COUNTY_RE.search(block)
     if county_m:
@@ -6815,16 +6867,24 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
     if result["contact_name"]:
         result["heirs"] = result["contact_name"].split("(")[0].strip() or result["contact_name"]
 
-    if not result["address"]:
+    if result["address"]:
+        result["address"] = _sw_clean_address(result["address"])
+    else:
         addr_m = CRUSHER_STREET_RE.search(block)
         if addr_m:
-            result["address"] = addr_m.group(1).strip()
+            result["address"] = _sw_clean_address(addr_m.group(1).strip())
         else:
-            fallback = parse_lead(block)
-            if fallback.get("address") and fallback["address"] != "Address TBD":
-                result["address"] = fallback["address"]
-            else:
-                result["address"] = "Address TBD"
+            for ln in lines:
+                s = ln.strip()
+                if _sw_line_looks_like_address(s):
+                    result["address"] = _sw_clean_address(s)
+                    break
+            if not result["address"]:
+                fallback = parse_lead(block)
+                if fallback.get("address") and fallback["address"] != "Address TBD":
+                    result["address"] = _sw_clean_address(fallback["address"])
+                else:
+                    result["address"] = "Address TBD"
 
     if not result["decedent"]:
         result["decedent"] = "New Lead"
@@ -6864,15 +6924,15 @@ def _sw_append_block_as_hot(block: str) -> None:
     st.session_state.leads.insert(0, lead_entry)
 
 
-def _sw_append_all_hot(text: str) -> int:
-    """Append-only — one blank-line block = one HOT lead."""
-    blocks = _sw_split_blocks(text)
-    if not blocks:
-        return 0
-    for block in blocks:
-        _sw_append_block_as_hot(block)
+def _sw_import_single_hot(text: str) -> dict:
+    """Append-only — entire paste = exactly ONE HOT lead for Branton."""
+    block = (text or "").strip()
+    if not block:
+        return {"ok": False, "decedent": ""}
+    scott = _sw_parse_scott_formatted_block(block)
+    _sw_append_block_as_hot(block)
     persist_leads()
-    return len(blocks)
+    return {"ok": True, "decedent": scott.get("decedent") or "New Lead"}
 
 
 # ── Google Doc bulk import (isolated — used only by tab_add_leads) ────────────
@@ -7045,23 +7105,24 @@ with tab_add_leads:
     st.markdown(
         '<div class="gi-import-box">'
         "<h3>📥 Scott's Formatted Lead Import</h3>"
-        "<p>Paste your labeled lead block — we auto-map <b>Lead</b>, <b>Best Contact</b>, "
-        "<b>Phone</b>, <b>Email</b>, <b>Address</b>, and <b>Summary/Notes</b> straight into Branton's HOT queue.</p></div>",
+        "<p>Paste your <b>full formatted block</b> — one lead at a time. We map <b>Lead</b>, "
+        "<b>Best Contact</b>, <b>Phone</b>, <b>Email</b>, <b>Address</b>, and <b>Summary/Notes</b> "
+        "into one clean HOT lead for Branton.</p></div>",
         unsafe_allow_html=True,
     )
     sw_paste = st.text_area(
-        "Paste my formatted lead here",
-        height=320,
+        "Paste my full formatted lead here (one lead at a time)",
+        height=360,
         placeholder=(
             "Lead: Mary Johnson\n"
-            "Best Contact: John Johnson (Executor)\n"
+            "Best Person to Call: John Johnson (Executor)\n"
             "Phone: (615) 555-1212\n"
             "Email: john@email.com\n"
             "Address: 4521 Main St, Lebanon, TN 37087\n"
             "Status: 🔥 HOT\n"
             "Summary:\n"
-            "Wilson County probate filing. Executor motivated — vacant property, ready for outreach.\n\n"
-            "Separate multiple leads with a blank line…"
+            "Wilson County probate filing. Executor motivated — vacant property, ready for outreach.\n"
+            "Long notes and paragraphs stay together as one full Notes field."
         ),
         key="sw_simple_paste",
     )
@@ -7087,18 +7148,19 @@ with tab_add_leads:
             if pdf_text:
                 combined = f"{combined}\n\n{pdf_text}".strip() if combined else pdf_text
         if not combined:
-            st.warning("Paste your formatted lead first.")
+            st.warning("Paste your full formatted lead first.")
         else:
-            n = _sw_append_all_hot(combined)
-            st.session_state.sw_add_flash = True
-            st.session_state.sw_add_msg = (
-                "✅ Lead added perfectly with name, phone, email, address, and full notes. "
-                "Ready for Branton."
-                if n == 1
-                else f"✅ **{n}** leads added perfectly with name, phone, email, address, and full notes. "
-                f"Ready for Branton."
-            )
-            st.rerun()
+            imported = _sw_import_single_hot(combined)
+            if imported["ok"]:
+                decedent = imported["decedent"]
+                st.session_state.sw_add_flash = True
+                st.session_state.sw_add_msg = (
+                    f"✅ **{decedent}** added perfectly as ONE HOT lead with name, phone, email, "
+                    "address, and full notes. Ready for Branton."
+                )
+                st.rerun()
+            else:
+                st.warning("Paste your full formatted lead first.")
 
     st.markdown("---")
 
