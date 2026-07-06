@@ -3596,6 +3596,183 @@ Scott Hardesty · eXp Realty · Mount Juliet, TN
     return ""
 
 
+# ── Attorney Outreach tab helpers (isolated — used only by tab_attorney_outreach) ──
+_AO_OUTREACH_MARKER = "📨 Value-First Attorney Letter sent"
+_AO_TOP_FIRMS = [
+    {"attorney": "Sarah Whitaker, Esq.", "firm": "Whitaker Legal Group", "county": "Davidson"},
+    {"attorney": "James Cole, Esq.", "firm": "Cole & Associates Estate Law", "county": "Williamson"},
+    {"attorney": "Rebecca Dunn, Esq.", "firm": "Dunn Probate & Trust", "county": "Sumner"},
+    {"attorney": "Mark Ellison, Esq.", "firm": "Ellison Elder Law", "county": "Wilson"},
+    {"attorney": "Laura Pierce, Esq.", "firm": "Pierce Law Office", "county": "Rutherford"},
+]
+
+
+def _ao_display_case(lead: dict) -> str:
+    for src in (lead.get("case_number", ""), lead.get("raw", "")):
+        text = (src or "").strip()
+        if not text:
+            continue
+        for pat in (
+            r"\b(26P\d+)\b",
+            r"\b(PR\s*20\d{2}\s*[-–—]\s*\d+)\b",
+            r"\b(PR\d{4}-\d+)\b",
+            r"\b(20\d{2}P\d+)\b",
+        ):
+            m = re.search(pat, text, re.I)
+            if m:
+                return re.sub(r"\s+", " ", m.group(1)).strip().upper()
+        if len(text) < 48 and "@" not in text and "|" not in text:
+            return text
+    return "—"
+
+
+def _ao_lead_parsed(lead: dict) -> dict:
+    heir = (lead.get("heirs") or lead.get("contact_name") or "Estate Heirs / Executor").strip()
+    return {
+        "decedent": lead.get("decedent", "[Decedent Name]"),
+        "address": lead.get("address", "[Property Address]"),
+        "county": lead.get("county", "[County]"),
+        "heirs": heir,
+        "case_number": _ao_display_case(lead),
+        "contact_name": (lead.get("contact_name") or heir.split("(")[0].strip() or heir),
+    }
+
+
+def _ao_has_recent_outreach(lead: dict, days: int = 30) -> bool:
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    for note in lead.get("notes", []):
+        if note.get("ts", "") >= cutoff and _AO_OUTREACH_MARKER in (note.get("text") or ""):
+            return True
+    return False
+
+
+def _ao_value_first_subject(lead: dict) -> str:
+    parsed = _ao_lead_parsed(lead)
+    case_no = parsed["case_number"]
+    decedent = parsed["decedent"]
+    if case_no and case_no != "—":
+        return f"Free Property Net Sheet — Estate of {decedent} · {case_no} (for your file)"
+    return f"Free Probate Property Net Sheet — Estate of {decedent} · {parsed['county']} (for your file)"
+
+
+def _ao_fable_value_first_letter(lead: dict, attorney: str, firm: str) -> str:
+    """Fable playbook: value-first subject, net sheet offer, zero-ask tone, objection handlers."""
+    parsed = _ao_lead_parsed(lead)
+    decedent = parsed["decedent"]
+    address = parsed["address"]
+    county = parsed["county"]
+    heir = parsed["heirs"]
+    case_no = parsed["case_number"]
+    contact = parsed["contact_name"]
+    today = datetime.now().strftime("%B %d, %Y")
+    firm_label = firm.strip() or "your office"
+    subject = _ao_value_first_subject(lead)
+    case_line = f" · **{case_no}**" if case_no and case_no != "—" else ""
+
+    return f"""Subject: {subject}
+
+Dear {attorney or "Counsel"},
+
+I'm reaching out with **no ask** — no meeting, no coffee, no favor. I simply wanted to leave a resource in your inbox in case property questions surface on the **Estate of {decedent}**{case_line}.
+
+**Property:** {address} ({county})
+**Primary contact on file:** {contact} ({heir})
+
+**What I'm offering your client — zero cost, zero obligation:**
+• Complimentary **Property Net Sheet / Equity Snapshot** (real proceeds math, not a Zillow guess)
+• One-page **Probate Property Timeline** PDF your office can hand to heirs
+• Vendor coordination list (cleanout, lockbox, lawn, estate sale) — we do not move until you clear authority
+
+**How I work alongside counsel (Project Coordinator only):**
+• I never give legal advice — property, vendors, and market analysis only
+• Every timeline I quote is **subject to court approval**
+• I loop you in before any property decision or marketing
+• Neutral Net Sheets when siblings disagree — same facts, less conflict
+
+If this file isn't active for {firm_label}, **no reply needed** — I won't follow up unless you find it useful.
+
+Respectfully,
+Scott Hardesty · eXp Realty · Mount Juliet, TN
+📞 {DEDICATED_PHONE_LINE}
+{today}
+
+─────────────────────────────────────────────
+BUILT-IN OBJECTION HANDLERS (Fable playbook — for your reference)
+─────────────────────────────────────────────
+"We already have someone on the property side."
+  → "Perfect — I'm not asking to replace anyone. The Net Sheet and timeline PDF are yours to keep or forward. Zero strings."
+
+"Client isn't ready to discuss the house."
+  → "Totally understand. Early numbers help families avoid surprises later — happy to prepare the Net Sheet now and hold it until you release it."
+
+"It's too early — no letters yet."
+  → "That's exactly when a property resource helps — heirs get clarity before emotions harden. I wait for your green light before any contact."
+
+"We handle everything in-house."
+  → "Respected. I stay in my lane — property math and vendor coordination only. Use what helps; ignore the rest."
+
+"Don't contact our client directly."
+  → "Understood — counsel-only communication. I will not reach heirs until you authorize. The Net Sheet goes to your file first."
+
+"What's the catch?"
+  → "No catch — I specialize in probate property coordination. Attorneys refer me when clients need Net Sheets, vendors, and Express Offers compared on one page. Court approval on every path."
+─────────────────────────────────────────────"""
+
+
+def _ao_mark_letter_sent(lead_id: str, attorney: str, firm: str) -> None:
+    lead = find_lead(lead_id)
+    if not lead:
+        return
+    today_str = datetime.now().strftime("%B %d, %Y")
+    fu_iso = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+    firm_bit = f" ({firm})" if firm.strip() else ""
+    add_note(
+        lead_id,
+        f"{_AO_OUTREACH_MARKER} to {attorney}{firm_bit} · {today_str} · Follow-up +7 days",
+    )
+    update_lead(lead_id, follow_up_iso=fu_iso)
+    lead["activity"].insert(0, {
+        "ts": datetime.now().isoformat(),
+        "type": "attorney_outreach",
+        "detail": f"Value-First letter → {attorney or firm or 'counsel'}",
+    })
+    persist_leads()
+
+
+def _ao_eligible_leads(leads: list) -> list:
+    eligible = [
+        l for l in leads
+        if (l.get("decedent") or l.get("address"))
+        and effective_pipeline_stage(l) != "Closed"
+        and not _ao_has_recent_outreach(l)
+    ]
+    eligible.sort(key=lambda x: (-int(x.get("score") or 0), x.get("follow_up_iso", "9999-12-31")))
+    return eligible
+
+
+def _ao_batch_letter_pairs(leads: list, n: int = 5) -> list:
+    eligible = _ao_eligible_leads(leads)
+    pairs = []
+    for i, firm in enumerate(_AO_TOP_FIRMS[:n]):
+        if i >= len(eligible):
+            break
+        pairs.append({"lead": eligible[i], "firm": firm})
+    return pairs
+
+
+def _ao_batch_email_bundle(pairs: list) -> str:
+    blocks = []
+    for i, pair in enumerate(pairs, 1):
+        firm = pair["firm"]
+        letter = _ao_fable_value_first_letter(
+            pair["lead"],
+            firm["attorney"],
+            firm["firm"],
+        )
+        blocks.append(f"{'═' * 60}\nLETTER {i} → {firm['attorney']} · {firm['firm']}\n{'═' * 60}\n\n{letter}")
+    return "\n\n\n".join(blocks)
+
+
 def generate_guardian_kit(parsed: dict, vendors: dict) -> str:
     decedent = parsed["decedent"]
     address = parsed["address"]
@@ -5014,13 +5191,14 @@ st.markdown(
 )
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab_dashboard, tab_crusher, tab_add_leads, tab_newspaper, tab_ai_agent, tab_outreach, tab_partner, tab_vendors, tab_training, tab_hospice = st.tabs([
+tab_dashboard, tab_crusher, tab_add_leads, tab_newspaper, tab_ai_agent, tab_outreach, tab_attorney_outreach, tab_partner, tab_vendors, tab_training, tab_hospice = st.tabs([
     "Dashboard",
     "💰 90-Day Probate Crusher",
     "Add New Leads",
     "📰 Newspaper Scraper • Small County Beast",
     "🚀 AI Agent Pipeline",
     "Generate Outreach",
+    "📨 Attorney Outreach",
     "📘 Partner Kit",
     "🛠️ Vendors Rolodex",
     "🎥 Training",
@@ -5257,6 +5435,169 @@ with tab_outreach:
                 generate_attorney_template("review_request", attorney_name, attorney_firm, att_parsed),
                 height=380,
             )
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB — 📨 Attorney Outreach (Fable value-first playbook)
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_attorney_outreach:
+    st.subheader("📨 Attorney Outreach")
+    st.caption(
+        "Fable playbook — value-first Net Sheet offer, zero-ask tone, objection handlers built-in. "
+        "Auto-fills from CRM leads; tracks sent date + 7-day follow-up."
+    )
+
+    ao_leads = get_leads()
+    ao_options = [
+        l for l in ao_leads
+        if l.get("decedent") or l.get("address") or l.get("case_number")
+    ]
+    ao_options.sort(key=lambda x: (-int(x.get("score") or 0), x.get("created", "")))
+
+    if not ao_options:
+        st.info("No leads in CRM yet — add leads on Dashboard or Add New Leads first.")
+    else:
+        def _ao_lead_label(lead: dict) -> str:
+            case = _ao_display_case(lead)
+            dec = (lead.get("decedent") or "Unknown").strip()
+            county = (lead.get("county") or "").strip()
+            score = int(lead.get("score") or 0)
+            sent = " ✓ sent" if _ao_has_recent_outreach(lead) else ""
+            return f"{case} · {dec} · {county} · [{score}]{sent}"
+
+        ao_labels = [_ao_lead_label(l) for l in ao_options]
+        ao_pick = st.selectbox(
+            "Select lead (auto-fills case, decedent, address, heirs)",
+            range(len(ao_options)),
+            format_func=lambda i: ao_labels[i],
+            key="ao_lead_pick",
+        )
+        ao_lead = ao_options[ao_pick]
+        ao_case = _ao_display_case(ao_lead)
+        ao_parsed = _ao_lead_parsed(ao_lead)
+
+        st.markdown(
+            f"**Case #** {ao_case} · **{ao_parsed['decedent']}** · "
+            f"{ao_parsed['address']} · {ao_parsed['county']}"
+        )
+
+        ao_c1, ao_c2 = st.columns(2)
+        with ao_c1:
+            ao_attorney = st.text_input(
+                "Attorney Name",
+                value=(ao_lead.get("deal_attorney") or "").split("@")[0].strip(),
+                placeholder="e.g., Jane Smith, Esq.",
+                key="ao_attorney_name",
+            )
+        with ao_c2:
+            ao_firm = st.text_input(
+                "Firm Name",
+                placeholder="e.g., Smith & Associates",
+                key="ao_attorney_firm",
+            )
+
+        ao_gen = st.button(
+            f"Generate Value-First Letter for {ao_case}",
+            type="primary",
+            use_container_width=True,
+            key="ao_gen_letter",
+        )
+
+        if ao_gen:
+            if not ao_attorney.strip():
+                st.warning("Enter attorney name first.")
+            else:
+                ao_letter = _ao_fable_value_first_letter(ao_lead, ao_attorney.strip(), ao_firm.strip())
+                st.session_state.ao_last_letter = ao_letter
+                st.session_state.ao_last_lead_id = ao_lead.get("id", "")
+                st.session_state.ao_last_subject = _ao_value_first_subject(ao_lead)
+
+        if st.session_state.get("ao_last_letter"):
+            st.success(f"✅ Value-first letter ready — **{_ao_value_first_subject(ao_lead)}**")
+            st.text_area(
+                "Value-First Letter (copy to email)",
+                st.session_state.ao_last_letter,
+                height=520,
+                key="ao_letter_preview",
+            )
+            ao_m1, ao_m2 = st.columns(2)
+            with ao_m1:
+                ao_mail_subject = urllib.parse.quote(st.session_state.get("ao_last_subject", ""))
+                ao_mail_body = urllib.parse.quote(st.session_state.ao_last_letter)
+                st.link_button(
+                    "📧 Open in Email",
+                    f"mailto:?subject={ao_mail_subject}&body={ao_mail_body}",
+                    use_container_width=True,
+                )
+            with ao_m2:
+                if st.button(
+                    "✅ Mark Sent + Schedule 7-Day Follow-Up",
+                    use_container_width=True,
+                    type="primary",
+                    key="ao_mark_sent",
+                ):
+                    lid = st.session_state.get("ao_last_lead_id") or ao_lead.get("id", "")
+                    _ao_mark_letter_sent(lid, ao_attorney.strip(), ao_firm.strip())
+                    st.success(
+                        f"Logged on Dashboard — follow-up **{(datetime.now() + timedelta(days=7)).strftime('%A, %B %d, %Y')}**"
+                    )
+                    st.rerun()
+
+        st.markdown("---")
+        st.markdown("#### 📬 Batch — Top Firms Today")
+        st.caption(
+            "Pairs your **5 highest-scored** leads (no letter in last 30 days) with Middle TN probate firms. "
+            "Preview all, then copy combined text."
+        )
+
+        ao_batch_pairs = _ao_batch_letter_pairs(ao_leads, 5)
+        if len(ao_batch_pairs) < 5:
+            st.warning(
+                f"Only **{len(ao_batch_pairs)}** eligible leads (need decedent/address, not closed, "
+                "no recent Value-First letter). Add or qualify more leads for a full batch of 5."
+            )
+
+        if ao_batch_pairs:
+            ao_batch_btn = st.button(
+                "Send 5 Letters to Top Firms Today",
+                type="primary",
+                use_container_width=True,
+                key="ao_batch_gen",
+            )
+            if ao_batch_btn:
+                st.session_state.ao_batch_bundle = _ao_batch_email_bundle(ao_batch_pairs)
+                st.session_state.ao_batch_pairs = ao_batch_pairs
+
+            if st.session_state.get("ao_batch_bundle"):
+                st.success(f"✅ **{len(st.session_state.get('ao_batch_pairs', []))}** letters ready — preview below")
+                for i, pair in enumerate(st.session_state.get("ao_batch_pairs", []), 1):
+                    firm = pair["firm"]
+                    lead = pair["lead"]
+                    with st.expander(
+                        f"Letter {i} → {firm['attorney']} · {firm['firm']} "
+                        f"· Case {_ao_display_case(lead)}",
+                        expanded=(i == 1),
+                    ):
+                        st.text(
+                            _ao_fable_value_first_letter(lead, firm["attorney"], firm["firm"]),
+                        )
+                st.text_area(
+                    "Copy all 5 letters to email",
+                    st.session_state.ao_batch_bundle,
+                    height=400,
+                    key="ao_batch_copy",
+                )
+                if st.button(
+                    "✅ Mark All 5 Sent + Schedule Follow-Ups",
+                    use_container_width=True,
+                    key="ao_batch_mark_sent",
+                ):
+                    for pair in st.session_state.get("ao_batch_pairs", []):
+                        f = pair["firm"]
+                        _ao_mark_letter_sent(pair["lead"]["id"], f["attorney"], f["firm"])
+                    st.success("All 5 logged on Dashboard with 7-day follow-ups.")
+                    st.session_state.ao_batch_bundle = ""
+                    st.session_state.ao_batch_pairs = []
+                    st.rerun()
 
 # ── Bulk Qualifier tab helpers (isolated — used only by tab_add_leads) ─────────
 try:
