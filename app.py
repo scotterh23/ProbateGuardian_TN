@@ -1599,6 +1599,107 @@ def _is_hot_lead(lead: dict) -> bool:
     return effective_pipeline_stage(lead) == "New/Hot"
 
 
+# ── Empire junk cleanup (tab_newspaper nuke + dashboard HOT filter) ───────────
+_NJ_JUNK_MARKERS = (
+    "Contact TBD",
+    "Benton County Probate Division",
+    "NOTICE TO CREDITORS Address TBD",
+    "As Required Address TBD",
+)
+_NJ_JUNK_DECEDENT_EXACT = {
+    "", "contact tbd", "unknown", "unknown decedent", "tbd", "—",
+    "notice to creditors address tbd", "as required address tbd",
+    "benton county probate division",
+}
+
+
+def _nj_lead_text_blob(lead: dict) -> str:
+    parts = [
+        str(lead.get(k, ""))
+        for k in ("decedent", "address", "heirs", "contact_name", "raw", "county", "case_number")
+    ]
+    for note in lead.get("notes") or []:
+        parts.append(note.get("text", "") if isinstance(note, dict) else str(note))
+    return "\n".join(parts)
+
+
+def _nj_has_real_decedent(lead: dict) -> bool:
+    dec = (lead.get("decedent") or "").strip()
+    if not dec or dec.lower() in _NJ_JUNK_DECEDENT_EXACT:
+        return False
+    for marker in _NJ_JUNK_MARKERS:
+        if marker.lower() in dec.lower():
+            return False
+    if re.search(r"notice\s+to\s+creditors|probate\s+division|as\s+required", dec, re.I):
+        return False
+    return len(re.findall(r"[A-Za-z]+", dec)) >= 2
+
+
+def _nj_has_real_address(lead: dict) -> bool:
+    addr = (lead.get("address") or "").strip()
+    low = addr.lower()
+    if not addr or low in ("", "tbd", "—", "address tbd", "n/a"):
+        return False
+    for marker in ("address tbd", "as required", "notice to creditors"):
+        if marker in low:
+            return False
+    return bool(re.search(r"\d+\s+\w", addr))
+
+
+def _nj_is_hot_queue_pushed(lead: dict) -> bool:
+    if lead.get("branton_hot") or lead.get("assigned_to_branton"):
+        return True
+    for act in lead.get("activity") or []:
+        detail = (act.get("detail") or "").lower()
+        if "hot queue" in detail or ("added to" in detail and "branton" in detail):
+            return True
+    return False
+
+
+def _nj_is_protected_lead(lead: dict) -> bool:
+    return _nj_has_real_decedent(lead) or _nj_has_real_address(lead) or _nj_is_hot_queue_pushed(lead)
+
+
+def _nj_is_junk_lead(lead: dict) -> bool:
+    if _nj_is_protected_lead(lead):
+        return False
+    blob = _nj_lead_text_blob(lead)
+    if any(marker in blob for marker in _NJ_JUNK_MARKERS):
+        return True
+    if not _nj_has_real_decedent(lead):
+        return True
+    if int(lead.get("score") or 0) == 0:
+        return True
+    return False
+
+
+def _nj_nuke_junk_leads() -> dict:
+    leads = get_leads()
+    kept = [l for l in leads if not _nj_is_junk_lead(l)]
+    removed = len(leads) - len(kept)
+    st.session_state.leads = kept
+    persist_leads()
+    return {"removed": removed, "kept": len(kept)}
+
+
+def _nj_is_qualified_hot_lead(lead: dict) -> bool:
+    if effective_pipeline_stage(lead) == "Closed":
+        return False
+    if _nj_is_hot_queue_pushed(lead):
+        return True
+    if _is_hot_lead(lead) and _nj_has_real_decedent(lead):
+        return True
+    if int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD and _nj_has_real_decedent(lead):
+        return True
+    return False
+
+
+def _nj_apply_hot_qualified_filter(leads: list) -> list:
+    if not st.session_state.get("crm_hot_only_filter", True):
+        return leads
+    return [l for l in leads if _nj_is_qualified_hot_lead(l)]
+
+
 def _filter_leads_due_today(leads: list) -> list:
     """Today's follow-ups plus all Hot leads — Hot sorted first."""
     today = datetime.now().strftime("%Y-%m-%d")
@@ -6092,6 +6193,11 @@ with tab_dashboard:
 
     st.session_state.setdefault("branton_call_mode", False)
     st.session_state.setdefault("call_mode_panel", {})
+    st.session_state.setdefault("crm_hot_only_filter", True)
+    st.toggle(
+        "🔥 Show Only HOT / Qualified Leads",
+        key="crm_hot_only_filter",
+    )
 
     if st.session_state.branton_call_mode:
         hdr_l, hdr_r = st.columns([2, 1])
@@ -6125,7 +6231,9 @@ with tab_dashboard:
                 st.success(f"✅ Pushed **{added}** hottest leads to queue.")
                 st.rerun()
 
-        hot_leads = get_branton_call_mode_leads(get_leads(), limit=10)
+        hot_leads = _nj_apply_hot_qualified_filter(
+            get_branton_call_mode_leads(get_leads(), limit=10)
+        )
         if not hot_leads:
             st.info("No hot leads yet — paste above and tap **Push Hottest**, or use the Crusher tab.")
         for lead in hot_leads:
@@ -6325,7 +6433,11 @@ with tab_dashboard:
             else:
                 list_filtered = filtered
 
+            list_filtered = _nj_apply_hot_qualified_filter(list_filtered)
+
             filter_bits = []
+            if st.session_state.get("crm_hot_only_filter", True):
+                filter_bits.append("🔥 HOT / Qualified only")
             if st.session_state.get("crm_list_mode") == "due_today":
                 filter_bits.append("due today + 🔥 Hot")
             elif pipe_filter != "All":
@@ -7605,6 +7717,31 @@ with tab_newspaper:
     hermes_idx = st.session_state.get("ns_hermes_row")
     if hermes_idx is not None and ns_results and hermes_idx < len(ns_results):
         pass  # shown inline above
+
+    st.markdown("---")
+    st.markdown("#### 🧹 Empire Mode Cleanup")
+    st.caption(
+        "Deletes **test/junk scraper rows only** — never touches leads with a real decedent, "
+        "real address, or anything pushed to Branton's HOT queue. All notes stay on kept leads."
+    )
+    _nj_candidates = [l for l in get_leads() if _nj_is_junk_lead(l)]
+    st.caption(
+        f"Junk candidates: **{len(_nj_candidates)}** · Protected: "
+        f"**{len(get_leads()) - len(_nj_candidates)}**"
+    )
+    if st.button(
+        "🧹 NUKE Junk Test Leads Only",
+        use_container_width=True,
+        key="ns_nuke_junk",
+    ):
+        _nj_result = _nj_nuke_junk_leads()
+        st.session_state.ns_nuke_flash = (
+            f"🧹 Removed **{_nj_result['removed']}** junk leads. "
+            f"**{_nj_result['kept']}** real leads + every note intact."
+        )
+        st.rerun()
+    if st.session_state.get("ns_nuke_flash"):
+        st.success(st.session_state.pop("ns_nuke_flash"))
 
     st.markdown("---")
     if st.button("🌎 Scale to National Empire", use_container_width=True, key="ns_empire_btn"):
