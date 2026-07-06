@@ -6713,6 +6713,39 @@ _SW_COUNTY_RE = re.compile(
 )
 _SW_HOT_STATUS_RE = re.compile(r"(?:status\s*:\s*)?🔥?\s*hot\b", re.I)
 _SW_CONTACT_LABELS = frozenset({"best_contact", "primary_contact", "best_person_to_call"})
+_SW_CONTACT_ROLE_RE = re.compile(
+    r"^(.+?),\s*(Administrator|Executrix|Executor|Personal Representative|PR|Son|Daughter|"
+    r"Heir|Spouse|Widow|Widower|Attorney|Beneficiary|Niece|Nephew|Grandson|Granddaughter)\b.*$",
+    re.I,
+)
+
+
+def _sw_clean_decedent(name: str) -> str:
+    cleaned = (name or "").strip()
+    cleaned = re.sub(r"^estate\s+of\s+", "", cleaned, flags=re.I).strip()
+    cleaned = re.sub(r",?\s*deceased\.?$", "", cleaned, flags=re.I).strip(" ,")
+    return cleaned or "New Lead"
+
+
+def _sw_extract_contact_name(raw: str) -> tuple:
+    """Return (clean_primary_contact, role_or_title)."""
+    raw = (raw or "").strip()
+    if not raw:
+        return "", ""
+
+    paren_m = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", raw)
+    if paren_m:
+        return paren_m.group(1).strip(), paren_m.group(2).strip()
+
+    dash_m = re.match(r"^(.+?)\s*[-–—]\s*(.+)$", raw)
+    if dash_m and len(dash_m.group(2).split()) <= 5:
+        return dash_m.group(1).strip(), dash_m.group(2).strip()
+
+    comma_m = _SW_CONTACT_ROLE_RE.match(raw)
+    if comma_m:
+        return comma_m.group(1).strip(), comma_m.group(2).strip()
+
+    return raw, ""
 
 
 def _sw_clean_address(addr: str) -> str:
@@ -6727,10 +6760,15 @@ def _sw_line_looks_like_address(line: str) -> bool:
         return False
     if CRUSHER_STREET_RE.search(line):
         return True
-    return bool(re.search(
+    if re.search(
         r"\d+\s+\w+.*(?:\b(?:st|street|rd|road|ave|avenue|dr|drive|ln|lane|ct|court|way|blvd|pike)\b|,\s*tn\b|\b\d{5}\b)",
         line,
         re.I,
+    ):
+        return True
+    return bool(re.search(
+        r"^[A-Za-z\s\.'-]+,\s*(?:TN|[A-Z]{2})\s*\d{5}(?:-\d{4})?$",
+        line,
     ))
 
 
@@ -6740,6 +6778,7 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
     result = {
         "decedent": "",
         "contact_name": "",
+        "contact_role": "",
         "phone": "",
         "email": "",
         "address": "",
@@ -6773,9 +6812,11 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
             in_notes = False
 
             if label == "lead":
-                result["decedent"] = value
+                result["decedent"] = _sw_clean_decedent(value)
             elif label in _SW_CONTACT_LABELS:
-                result["contact_name"] = value
+                clean_name, role = _sw_extract_contact_name(value)
+                result["contact_name"] = clean_name or value
+                result["contact_role"] = role
             elif label == "phone":
                 result["phone"] = value
             elif label == "email":
@@ -6816,28 +6857,29 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
                 continue
             estate_m = re.match(r"^estate\s+of\s+(.+?)(?:,?\s*deceased)?$", ln, re.I)
             if estate_m:
-                result["decedent"] = estate_m.group(1).strip().rstrip(",")
+                result["decedent"] = _sw_clean_decedent(estate_m.group(1))
                 used_line_idxs.add(i)
                 break
             if not re.search(r"[@\d]{3}", ln):
-                result["decedent"] = ln
+                result["decedent"] = _sw_clean_decedent(ln)
                 used_line_idxs.add(i)
                 break
 
     result["notes_text"] = "\n".join(notes_lines).strip()
+    if not result["notes_text"] and prose_start_idx is not None:
+        result["notes_text"] = "\n".join(
+            lines[j].strip() for j in range(prose_start_idx, len(lines)) if lines[j].strip()
+        ).strip()
     if not result["notes_text"]:
-        remainder = []
+        prose_lines = []
         for i, ln in enumerate(lines):
             s = ln.strip()
             if not s or i in used_line_idxs or _SW_SCOTT_LABEL_RE.match(s):
                 continue
-            remainder.append(s)
-        if remainder:
-            result["notes_text"] = "\n".join(remainder).strip()
-        elif prose_start_idx is not None:
-            result["notes_text"] = "\n".join(
-                lines[j].strip() for j in range(prose_start_idx, len(lines)) if lines[j].strip()
-            ).strip()
+            if len(s) >= 40 and len(s.split()) >= 6:
+                prose_lines.append(s)
+        if prose_lines:
+            result["notes_text"] = "\n".join(prose_lines).strip()
     if not result["notes_text"]:
         result["notes_text"] = block
 
@@ -6865,7 +6907,10 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
         result["email"] = be
 
     if result["contact_name"]:
-        result["heirs"] = result["contact_name"].split("(")[0].strip() or result["contact_name"]
+        role = (result.get("contact_role") or "").strip()
+        result["heirs"] = (
+            f"{result['contact_name']} ({role})" if role else result["contact_name"]
+        )
 
     if result["address"]:
         result["address"] = _sw_clean_address(result["address"])
@@ -6886,8 +6931,7 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
                 else:
                     result["address"] = "Address TBD"
 
-    if not result["decedent"]:
-        result["decedent"] = "New Lead"
+    result["decedent"] = _sw_clean_decedent(result["decedent"])
 
     return result
 
@@ -6901,6 +6945,7 @@ def _sw_append_block_as_hot(block: str) -> None:
         "county": scott["county"],
         "heirs": scott["heirs"],
         "contact_name": scott["contact_name"],
+        "contact_role": scott.get("contact_role", ""),
         "phone": scott["phone"],
         "email": scott["email"],
         "raw": block,
@@ -7155,8 +7200,8 @@ with tab_add_leads:
                 decedent = imported["decedent"]
                 st.session_state.sw_add_flash = True
                 st.session_state.sw_add_msg = (
-                    f"✅ **{decedent}** added perfectly as ONE HOT lead with name, phone, email, "
-                    "address, and full notes. Ready for Branton."
+                    f"✅ **{decedent}** added perfectly as ONE HOT lead with Primary Contact Name, "
+                    "Phone, Email, Address, and full Notes. Ready for Branton."
                 )
                 st.rerun()
             else:
