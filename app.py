@@ -6699,6 +6699,19 @@ def _bq_push_row_to_branton(row: dict) -> bool:
 
 
 # ── Simple HOT append (isolated — used only by tab_add_leads) ─────────────────
+_SW_SCOTT_LABEL_RE = re.compile(
+    r"^(Lead|Best Contact|Primary Contact|Phone|Email|Address|Status|Summary|Notes)\s*:\s*(.*)$",
+    re.I,
+)
+_SW_COUNTY_RE = re.compile(
+    r"(Wilson|Davidson|Rutherford|Williamson|Sumner|Robertson|Cheatham|Dickson|Montgomery|Maury|"
+    r"Bedford|Coffee|DeKalb|Smith|Putnam|Cannon|Marshall|Lincoln|Franklin|Warren|Grundy|Hickman|"
+    r"Giles|Lawrence|Lewis|Perry|Wayne|Hardin|Henry|Stewart|Houston|Humphreys|Overton|Pickett|"
+    r"Fentress|Clay|Jackson|Macon|Trousdale)\s+County",
+    re.I,
+)
+
+
 def _sw_split_blocks(text: str) -> list:
     text = (text or "").strip()
     if not text:
@@ -6706,20 +6719,130 @@ def _sw_split_blocks(text: str) -> list:
     return [b.strip() for b in re.split(r"\n\s*\n+", text) if b.strip()]
 
 
-def _sw_append_block_as_hot(block: str) -> None:
-    """Simple append — first line = decedent, full block stored as notes/raw."""
-    lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
-    decedent = lines[0] if lines else "New Lead"
-    if decedent.lower().startswith("estate of"):
-        decedent = decedent[9:].strip()
-    parsed = {
-        "decedent": decedent or "New Lead",
-        "address": "Address TBD",
-        "county": "Middle TN",
-        "heirs": "",
+def _sw_parse_scott_formatted_block(block: str) -> dict:
+    """Parse Scott's labeled lead format into structured CRM fields."""
+    block = (block or "").strip()
+    result = {
+        "decedent": "",
         "contact_name": "",
         "phone": "",
         "email": "",
+        "address": "",
+        "county": "Middle TN",
+        "heirs": "",
+        "notes_text": "",
+        "is_hot": True,
+        "raw": block,
+    }
+    if not block:
+        return result
+
+    lines = block.splitlines()
+    notes_lines = []
+    in_notes = False
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            if in_notes:
+                notes_lines.append("")
+            continue
+
+        m = _SW_SCOTT_LABEL_RE.match(stripped)
+        if m:
+            label = m.group(1).lower().replace(" ", "_")
+            value = m.group(2).strip()
+            in_notes = False
+
+            if label == "lead":
+                result["decedent"] = value
+            elif label in ("best_contact", "primary_contact"):
+                result["contact_name"] = value
+            elif label == "phone":
+                result["phone"] = value
+            elif label == "email":
+                result["email"] = value
+            elif label == "address":
+                result["address"] = value
+            elif label == "status":
+                low = value.lower()
+                result["is_hot"] = "hot" in low or "🔥" in value or "new" in low
+            elif label in ("summary", "notes"):
+                in_notes = True
+                if value:
+                    notes_lines.append(value)
+            continue
+
+        if in_notes:
+            notes_lines.append(stripped)
+
+    if not result["decedent"]:
+        for ln in lines:
+            ln = ln.strip()
+            if not ln or _SW_SCOTT_LABEL_RE.match(ln):
+                continue
+            estate_m = re.match(r"^estate\s+of\s+(.+?)(?:,?\s*deceased)?$", ln, re.I)
+            if estate_m:
+                result["decedent"] = estate_m.group(1).strip().rstrip(",")
+                break
+            result["decedent"] = ln
+            break
+
+    result["notes_text"] = "\n".join(notes_lines).strip()
+    if not result["notes_text"]:
+        result["notes_text"] = block
+
+    county_m = _SW_COUNTY_RE.search(block)
+    if county_m:
+        result["county"] = county_m.group(0)
+
+    if result["phone"]:
+        pm = re.search(r"\(?\d{3}\)?[\s\-\.]?\d{3}[\s\-\.]?\d{4}", result["phone"])
+        if pm:
+            result["phone"] = pm.group(0)
+    if not result["phone"]:
+        bp, _ = _extract_phone_email_from_text(block)
+        result["phone"] = bp
+
+    if result["email"]:
+        em = re.search(r"[\w\.\-]+@[\w\.\-]+\.\w+", result["email"])
+        if em:
+            result["email"] = em.group(0)
+    if not result["email"]:
+        _, be = _extract_phone_email_from_text(block)
+        result["email"] = be
+
+    if result["contact_name"]:
+        result["heirs"] = result["contact_name"].split("(")[0].strip() or result["contact_name"]
+
+    if not result["address"]:
+        addr_m = CRUSHER_STREET_RE.search(block)
+        if addr_m:
+            result["address"] = addr_m.group(1).strip()
+        else:
+            fallback = parse_lead(block)
+            if fallback.get("address") and fallback["address"] != "Address TBD":
+                result["address"] = fallback["address"]
+            else:
+                result["address"] = "Address TBD"
+
+    if not result["decedent"]:
+        result["decedent"] = "New Lead"
+
+    return result
+
+
+def _sw_append_block_as_hot(block: str) -> None:
+    """Smart parse Scott's formatted block → HOT lead for Branton's queue."""
+    scott = _sw_parse_scott_formatted_block(block)
+    parsed = {
+        "decedent": scott["decedent"],
+        "address": scott["address"],
+        "county": scott["county"],
+        "heirs": scott["heirs"],
+        "contact_name": scott["contact_name"],
+        "phone": scott["phone"],
+        "email": scott["email"],
         "raw": block,
     }
     lead_entry = build_lead(
@@ -6730,11 +6853,11 @@ def _sw_append_block_as_hot(block: str) -> None:
         source="simple_add",
         assigned_to_branton=True,
         follow_up_days=0,
-        notes=initial_notes_from_block(block, source="Simple Add"),
+        notes=initial_notes_from_block(scott["notes_text"], source="Scott"),
         activity=[{
             "ts": datetime.now().isoformat(),
             "type": "import",
-            "detail": "➕ Simple add → Branton HOT queue",
+            "detail": "📥 Scott formatted import → Branton HOT queue",
         }],
     )
     lead_entry["branton_hot"] = True
@@ -6921,28 +7044,26 @@ with tab_add_leads:
 
     st.markdown(
         '<div class="gi-import-box">'
-        "<h3>➕ Simple Add — HOT for Branton</h3>"
-        "<p>Paste one formatted lead (or several separated by blank lines). Optional PDF. "
-        "Simple append — no parsing. Edit everything in Lead Detail after import.</p></div>",
+        "<h3>📥 Scott's Formatted Lead Import</h3>"
+        "<p>Paste your labeled lead block — we auto-map <b>Lead</b>, <b>Best Contact</b>, "
+        "<b>Phone</b>, <b>Email</b>, <b>Address</b>, and <b>Summary/Notes</b> straight into Branton's HOT queue.</p></div>",
         unsafe_allow_html=True,
     )
     sw_paste = st.text_area(
-        "Paste my formatted lead here (or drag PDF)",
-        height=280,
+        "Paste my formatted lead here",
+        height=320,
         placeholder=(
-            "Paste your lead block — first line = decedent. Edit all fields in Lead Detail after import.\n\n"
-            "Estate of Mary Johnson\n"
-            "4521 Main St, Lebanon, TN 37087\n"
-            "Wilson County\n"
-            "John Johnson (Executor)\n"
-            "(615) 555-1212 · john@email.com\n"
-            "Notes / summary here…\n\n"
-            "Estate of Robert Smith\n"
-            "717 Braidwood Drive, Nashville, TN 37214\n"
-            "…"
+            "Lead: Mary Johnson\n"
+            "Best Contact: John Johnson (Executor)\n"
+            "Phone: (615) 555-1212\n"
+            "Email: john@email.com\n"
+            "Address: 4521 Main St, Lebanon, TN 37087\n"
+            "Status: 🔥 HOT\n"
+            "Summary:\n"
+            "Wilson County probate filing. Executor motivated — vacant property, ready for outreach.\n\n"
+            "Separate multiple leads with a blank line…"
         ),
         key="sw_simple_paste",
-        label_visibility="collapsed",
     )
     sw_pdf = st.file_uploader(
         "Optional — drop a PDF (text appended to paste)",
@@ -6955,7 +7076,7 @@ with tab_add_leads:
 
     st.markdown('<div class="bq-btn-green-marker"></div>', unsafe_allow_html=True)
     if st.button(
-        "Add as HOT for Branton",
+        "📥 Import to Branton's HOT Queue",
         use_container_width=True,
         type="primary",
         key="sw_add_hot",
@@ -6966,11 +7087,17 @@ with tab_add_leads:
             if pdf_text:
                 combined = f"{combined}\n\n{pdf_text}".strip() if combined else pdf_text
         if not combined:
-            st.warning("Paste leads or drop a PDF first.")
+            st.warning("Paste your formatted lead first.")
         else:
             n = _sw_append_all_hot(combined)
             st.session_state.sw_add_flash = True
-            st.session_state.sw_add_msg = f"✅ **{n}** new HOT lead{'s' if n != 1 else ''} added for {PARTNER_NAME}"
+            st.session_state.sw_add_msg = (
+                "✅ Lead added perfectly with name, phone, email, address, and full notes. "
+                "Ready for Branton."
+                if n == 1
+                else f"✅ **{n}** leads added perfectly with name, phone, email, address, and full notes. "
+                f"Ready for Branton."
+            )
             st.rerun()
 
     st.markdown("---")
