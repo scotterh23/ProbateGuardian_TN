@@ -291,6 +291,41 @@ st.markdown(
         border: none !important;
         box-shadow: 0 4px 14px rgba(63, 185, 80, 0.35) !important;
     }
+    .crm-detail-contact-marker { display: none; }
+    .crm-detail-contact-marker + div [data-testid="stTextInput"] input {
+        font-size: 1.75rem !important;
+        font-weight: 800 !important;
+        min-height: 3.75rem !important;
+        padding: 0.85rem 1rem !important;
+        border: 2px solid #3fb950 !important;
+        background: #0d1117 !important;
+        color: #ffffff !important;
+        border-radius: 10px !important;
+        box-shadow: 0 0 20px rgba(63, 185, 80, 0.28) !important;
+    }
+    .crm-detail-field-marker { display: none; }
+    .crm-detail-field-marker + div [data-testid="stTextInput"] input {
+        font-size: 1.12rem !important;
+        font-weight: 600 !important;
+        min-height: 3rem !important;
+        padding: 0.65rem 0.85rem !important;
+        border: 1px solid #30363d !important;
+        border-radius: 8px !important;
+    }
+    .crm-detail-notes-marker { display: none; }
+    .crm-detail-notes-marker + div [data-testid="stTextArea"] textarea {
+        font-size: 1.05rem !important;
+        min-height: 16rem !important;
+        line-height: 1.45 !important;
+        border: 1px solid #30363d !important;
+        border-radius: 8px !important;
+    }
+    .crm-detail-status-marker { display: none; }
+    .crm-detail-status-marker + div [data-baseweb="select"] > div {
+        min-height: 3rem !important;
+        font-size: 1.05rem !important;
+        font-weight: 600 !important;
+    }
     .crusher-glow-marker { display: none; }
     .crusher-glow-marker + div [data-testid="stTextArea"] textarea {
         min-height: 14rem !important;
@@ -1857,7 +1892,7 @@ def _sync_lead_edit_form(lead: dict, key_prefix: str) -> None:
     st.session_state[f"{key_prefix}_email_{lid}"] = lead.get("email", "")
     st.session_state[f"{key_prefix}_addr_{lid}"] = lead.get("address", "")
     stage = detail_pipeline_stage(lead)
-    st.session_state[f"stage_{lid}"] = stage
+    _sync_detail_stage_keys(lid, stage)
     st.session_state[f"branton_{lid}"] = bool(lead.get("assigned_to_branton"))
     try:
         st.session_state[f"fu_{lid}"] = datetime.strptime(
@@ -1906,32 +1941,43 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
 
     st.markdown("#### Lead Detail & Edit")
     st.markdown(
-        '<p style="font-size:1.05rem;font-weight:800;color:#aff5b4;margin:0 0 0.25rem 0;">'
+        '<p style="font-size:1.35rem;font-weight:900;color:#3fb950;margin:0.35rem 0 0.35rem 0;">'
         "PRIMARY CONTACT NAME</p>",
         unsafe_allow_html=True,
     )
+    st.markdown('<div class="crm-detail-contact-marker"></div>', unsafe_allow_html=True)
     contact = st.text_input(
         "Primary Contact Name",
         key=f"{key_prefix}_contact_{lid}",
         label_visibility="collapsed",
         placeholder="Heir / Executor name",
     )
-    decedent = st.text_input("Decedent", key=f"{key_prefix}_dec_{lid}")
-    ph_col, em_col = st.columns(2)
-    with ph_col:
-        phone = st.text_input("Phone", key=f"{key_prefix}_phone_{lid}")
-    with em_col:
-        email = st.text_input("Email", key=f"{key_prefix}_email_{lid}")
+    st.markdown('<div class="crm-detail-field-marker"></div>', unsafe_allow_html=True)
+    phone = st.text_input("Phone", key=f"{key_prefix}_phone_{lid}")
+    st.markdown('<div class="crm-detail-field-marker"></div>', unsafe_allow_html=True)
+    email = st.text_input("Email", key=f"{key_prefix}_email_{lid}")
+    st.markdown('<div class="crm-detail-field-marker"></div>', unsafe_allow_html=True)
     address = st.text_input("Address", key=f"{key_prefix}_addr_{lid}")
-    notes = st.text_area("Notes", height=240, key=f"{key_prefix}_notes_{lid}")
+    st.markdown('<div class="crm-detail-field-marker"></div>', unsafe_allow_html=True)
+    decedent = st.text_input("Decedent", key=f"{key_prefix}_dec_{lid}")
+    st.markdown('<div class="crm-detail-notes-marker"></div>', unsafe_allow_html=True)
+    notes = st.text_area("Notes", height=260, key=f"{key_prefix}_notes_{lid}")
+    st.markdown('<div class="crm-detail-status-marker"></div>', unsafe_allow_html=True)
+    status = st.selectbox(
+        "Status",
+        DETAIL_PIPELINE_STAGES,
+        key=f"stage_{lid}",
+        on_change=_on_detail_pipeline_change,
+        args=(lid,),
+    )
 
     e1, e2, e3, e4 = st.columns([3, 2, 2, 1])
     with e1:
-        status = st.selectbox(
+        st.selectbox(
             "Pipeline Stage",
             DETAIL_PIPELINE_STAGES,
-            key=f"stage_{lid}",
-            on_change=_on_detail_pipeline_change,
+            key=f"stage_pipe_{lid}",
+            on_change=_on_detail_pipeline_row_change,
             args=(lid,),
         )
     with e2:
@@ -2216,11 +2262,28 @@ def _sync_top_pipe_filter_from_detail(detail_stage: str) -> None:
     st.session_state.crm_pipe_filter = DETAIL_TO_ANALYTICS.get(detail_stage, "All")
 
 
+def _sync_detail_stage_keys(lead_id: str, stage: str) -> None:
+    st.session_state[f"stage_{lead_id}"] = stage
+    st.session_state[f"stage_pipe_{lead_id}"] = stage
+
+
 def _on_detail_pipeline_change(lead_id: str) -> None:
     """Detail Pipeline Stage changed — save lead, sync top filter, refresh list."""
     stage = st.session_state.get(f"stage_{lead_id}")
     if not stage:
         return
+    st.session_state[f"stage_pipe_{lead_id}"] = stage
+    set_lead_pipeline_stage_by_id(lead_id, stage)
+    _sync_top_pipe_filter_from_detail(stage)
+    st.session_state.pop("_dash_notes_sync_id", None)
+
+
+def _on_detail_pipeline_row_change(lead_id: str) -> None:
+    """Pipeline row selectbox changed — keep Status field in sync."""
+    stage = st.session_state.get(f"stage_pipe_{lead_id}")
+    if not stage:
+        return
+    st.session_state[f"stage_{lead_id}"] = stage
     set_lead_pipeline_stage_by_id(lead_id, stage)
     _sync_top_pipe_filter_from_detail(stage)
     st.session_state.pop("_dash_notes_sync_id", None)
@@ -2271,9 +2334,10 @@ def _quick_stage_callback(lead_id: str, stage: str) -> None:
     if not set_lead_pipeline_stage_by_id(lead_id, stage):
         return
     st.session_state.crm_selected_lead_id = lead_id
-    st.session_state[f"stage_{lead_id}"] = stage
+    _sync_detail_stage_keys(lead_id, stage)
     _sync_top_pipe_filter_from_detail(stage)
     st.session_state.pop("_dash_notes_sync_id", None)
+    st.session_state.pop("_lead_edit_sync_id", None)
 
 
 def _is_manual_pipeline_stage(stage: str) -> bool:
