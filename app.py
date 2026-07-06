@@ -1605,7 +1605,6 @@ def _sync_lead_edit_form(lead: dict, key_prefix: str) -> None:
     stage = detail_pipeline_stage(lead)
     st.session_state[f"{key_prefix}_status_{lid}"] = stage
     st.session_state[f"{key_prefix}_notes_{lid}"] = get_lead_notes_full_text(lead)
-    st.session_state[f"{key_prefix}_branton_{lid}"] = bool(lead.get("assigned_to_branton"))
     st.session_state["_lead_edit_sync_id"] = lid
 
 
@@ -1625,7 +1624,7 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
         nav_l, nav_m, nav_r = st.columns([1, 1, 2])
         with nav_l:
             if st.button(
-                "◀ Previous Lead",
+                "◀ Previous",
                 key=f"{key_prefix}_prev_{lid}",
                 use_container_width=True,
                 disabled=(idx <= 0),
@@ -1634,7 +1633,7 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
                 st.rerun()
         with nav_m:
             if st.button(
-                "Next Lead ▶",
+                "Next ▶",
                 key=f"{key_prefix}_next_{lid}",
                 use_container_width=True,
                 disabled=(idx >= len(nav_ids) - 1),
@@ -1664,8 +1663,7 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
         email = st.text_input("Email", key=f"{key_prefix}_email_{lid}")
     address = st.text_input("Address", key=f"{key_prefix}_addr_{lid}")
     status = st.selectbox("Status", DETAIL_PIPELINE_STAGES, key=f"{key_prefix}_status_{lid}")
-    notes = st.text_area("Notes", height=220, key=f"{key_prefix}_notes_{lid}")
-    branton_on = st.toggle(f"Assign to {PARTNER_NAME}", key=f"{key_prefix}_branton_{lid}")
+    notes = st.text_area("Notes", height=240, key=f"{key_prefix}_notes_{lid}")
 
     if st.button(
         "💾 Save Changes",
@@ -1684,10 +1682,14 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
             address=address.strip() or lead.get("address", ""),
             heirs=heirs,
             pipeline_stage=status,
-            assigned_to_branton=branton_on,
             status="Closed" if status in CLOSED_DETAIL_STAGES else lead.get("status", "New/Hot"),
         )
-        set_lead_notes_by_id(lid, notes, author=PARTNER_NAME if branton_on else "Scott", show_saved=True)
+        set_lead_notes_by_id(
+            lid,
+            notes,
+            author=PARTNER_NAME if lead.get("assigned_to_branton") else "Scott",
+            show_saved=True,
+        )
         st.session_state.pop("_lead_edit_sync_id", None)
         st.session_state.pop("_dash_notes_sync_id", None)
         st.success("✅ Saved")
@@ -1864,6 +1866,18 @@ def _apply_crm_list_filters(leads: list) -> list:
 def _set_due_today_list_mode() -> None:
     st.session_state.crm_list_mode = "due_today"
     st.session_state.crm_pipe_filter = "All"
+
+
+def _set_last_added_list_mode() -> None:
+    st.session_state.crm_list_mode = "last_added"
+    st.session_state.crm_pipe_filter = "All"
+
+
+def _filter_last_added_leads(leads: list, limit: int = 20) -> list:
+    imported = [l for l in leads if l.get("source") == "simple_add"]
+    pool = imported if imported else list(leads)
+    pool.sort(key=lambda x: x.get("created", ""), reverse=True)
+    return pool[:limit]
 
 
 def _sync_top_pipe_filter_from_detail(detail_stage: str) -> None:
@@ -6298,39 +6312,19 @@ def _sw_split_blocks(text: str) -> list:
 
 
 def _sw_append_block_as_hot(block: str) -> None:
+    """Simple append — first line = decedent, full block stored as notes/raw."""
     lines = [ln.strip() for ln in block.splitlines() if ln.strip()]
     decedent = lines[0] if lines else "New Lead"
     if decedent.lower().startswith("estate of"):
         decedent = decedent[9:].strip()
-    address = "Address TBD"
-    county = "Middle TN"
-    heirs = ""
-    for line in lines[1:]:
-        cm = re.search(
-            r"(Wilson|Davidson|Rutherford|Williamson|Sumner|Robertson|Cheatham|Dickson|Montgomery|Maury)\s+County",
-            line,
-            re.I,
-        )
-        if cm:
-            county = cm.group(0)
-        if re.search(r"\d", line) and not _looks_like_case_number(line):
-            address = line
-    if len(lines) > 1 and not heirs:
-        for line in lines[1:4]:
-            if line != address and not _looks_like_case_number(line) and not re.search(r"county", line, re.I):
-                heirs = line
-                break
-    phone, email = _extract_phone_email_from_text(block)
-    contact_name, contact_role = _split_poc_field(heirs) if heirs else ("", "")
     parsed = {
         "decedent": decedent or "New Lead",
-        "address": address,
-        "county": county,
-        "heirs": heirs,
-        "contact_name": contact_name or heirs,
-        "contact_role": contact_role,
-        "phone": phone,
-        "email": email,
+        "address": "Address TBD",
+        "county": "Middle TN",
+        "heirs": "",
+        "contact_name": "",
+        "phone": "",
+        "email": "",
         "raw": block,
     }
     lead_entry = build_lead(
@@ -6533,16 +6527,15 @@ with tab_add_leads:
     st.markdown(
         '<div class="gi-import-box">'
         "<h3>➕ Simple Add — HOT for Branton</h3>"
-        "<p>Paste formatted leads (blank line between each). Optional PDF drop. "
-        "Append-only — never deletes or resets existing leads or notes. "
-        "Edit details anytime in Lead Detail.</p></div>",
+        "<p>Paste one formatted lead (or several separated by blank lines). Optional PDF. "
+        "Simple append — no parsing. Edit everything in Lead Detail after import.</p></div>",
         unsafe_allow_html=True,
     )
     sw_paste = st.text_area(
-        "Paste my formatted leads here (or drag PDF)",
+        "Paste my formatted lead here (or drag PDF)",
         height=280,
         placeholder=(
-            "One lead per blank line block — first line = decedent. Edit fields after import.\n\n"
+            "Paste your lead block — first line = decedent. Edit all fields in Lead Detail after import.\n\n"
             "Estate of Mary Johnson\n"
             "4521 Main St, Lebanon, TN 37087\n"
             "Wilson County\n"
@@ -6745,19 +6738,10 @@ with tab_dashboard:
     )
 
     if st.session_state.branton_call_mode:
-        hdr_l, hdr_m, hdr_r = st.columns([2, 1, 1])
+        hdr_l, hdr_r = st.columns([2, 1])
         with hdr_l:
             st.markdown("## 📞 Branton Call Mode")
             st.caption("Focus only — hottest Crusher leads. Call, text, move pipeline.")
-        with hdr_m:
-            if st.button(
-                "🔥 Edit Mode",
-                key="enter_edit_mode",
-                use_container_width=True,
-                type="primary",
-            ):
-                st.session_state.crm_edit_mode = True
-                st.rerun()
         with hdr_r:
             st.button(
                 "Exit Call Mode — Back to Full System",
@@ -6788,20 +6772,6 @@ with tab_dashboard:
         hot_leads = _nj_apply_hot_qualified_filter(
             get_branton_call_mode_leads(get_leads(), limit=10)
         )
-        if st.session_state.get("crm_edit_mode"):
-            st.markdown("---")
-            st.markdown("### 🔥 Edit Mode")
-            if hot_leads:
-                if st.session_state.get("crm_selected_lead_id") not in {l["id"] for l in hot_leads}:
-                    st.session_state.crm_selected_lead_id = hot_leads[0]["id"]
-                edit_lead = find_lead(st.session_state.get("crm_selected_lead_id")) or hot_leads[0]
-                _render_lead_detail_editor(edit_lead, nav_list=hot_leads, key_prefix="cm_edit")
-                if st.button("Done Editing", key="exit_edit_mode", use_container_width=True):
-                    st.session_state.crm_edit_mode = False
-                    st.rerun()
-            else:
-                st.info("No leads in queue — add leads first, then use Edit Mode.")
-            st.markdown("---")
         if not hot_leads:
             st.info("No hot leads yet — paste above and tap **Push Hottest**, or use the Crusher tab.")
         for lead in hot_leads:
@@ -6855,7 +6825,7 @@ with tab_dashboard:
         st.session_state.setdefault("crm_pipe_filter", "All")
 
         st.markdown('<div class="crm-top-filters-start"></div>', unsafe_allow_html=True)
-        due_col, _ = st.columns([1, 4], gap="small")
+        due_col, last_col, _ = st.columns([1, 1, 3], gap="small")
         with due_col:
             st.button(
                 "📅 Do Today",
@@ -6863,6 +6833,14 @@ with tab_dashboard:
                 use_container_width=True,
                 type="primary",
                 on_click=_set_due_today_list_mode,
+            )
+        with last_col:
+            st.button(
+                "📥 Show My Last Added Leads",
+                key="crm_last_added_btn",
+                use_container_width=True,
+                type="primary",
+                on_click=_set_last_added_list_mode,
             )
 
         analytics = compute_analytics(get_leads())
@@ -6998,14 +6976,19 @@ with tab_dashboard:
                 if county_filter != "All":
                     list_base = [l for l in list_base if l.get("county") == county_filter]
                 list_filtered = _filter_leads_due_today(list_base)
+            elif st.session_state.get("crm_list_mode") == "last_added":
+                list_filtered = _filter_last_added_leads(filtered)
             else:
                 list_filtered = filtered
 
-            list_filtered = _nj_apply_hot_qualified_filter(list_filtered)
+            if st.session_state.get("crm_list_mode") != "last_added":
+                list_filtered = _nj_apply_hot_qualified_filter(list_filtered)
 
             filter_bits = []
             if st.session_state.get("crm_hot_only_filter", True):
                 filter_bits.append("🔥 HOT / Real only")
+            if st.session_state.get("crm_list_mode") == "last_added":
+                filter_bits.append("📥 last added")
             if st.session_state.get("crm_list_mode") == "due_today":
                 filter_bits.append("due today + 🔥 Hot")
             elif pipe_filter != "All":
