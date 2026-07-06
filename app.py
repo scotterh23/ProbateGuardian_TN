@@ -10,6 +10,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -4817,6 +4818,9 @@ _NS_SUMNER_CITIES = (
     "Hendersonville", "Gallatin", "Portland", "White House", "Cottontown", "Westmoreland",
 )
 _NS_QUEUE_NOTE = "Newspaper Scrape • High Potential Asset"
+_NS_MAX_BATCH_FILES = 50
+_NS_INGEST_EXTS = (".pdf", ".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp")
+_NS_FILE_SPLIT_RE = re.compile(r"---\s*(?:FILE[^-]*|PAGE\s+\d+)\s*---", re.I)
 _NS_SPLIT_RE = re.compile(
     r"\n\s*\n+|\n(?=(?:NOTICE|Notice|Estate of|IN RE|In Re|Published|Probate|Obituary)\b)",
     re.I,
@@ -4927,10 +4931,34 @@ def _ns_phone_search_string(pr_heir: str, address_clue: str, text: str) -> str:
     return f"{contact} · {city}, TN"
 
 
-def _ns_split_blocks(raw: str) -> list:
-    text = (raw or "").strip()
-    if not text:
-        return []
+def _ns_primary_contact_name(row: dict) -> str:
+    pr = (row.get("pr_heir") or "").strip()
+    if pr and pr != "Contact TBD":
+        m = re.match(r"^([^(]+)", pr)
+        return (m.group(1).strip() if m else pr)
+    return "Contact TBD"
+
+
+def _ns_primary_contact_html(row: dict) -> str:
+    name = _ns_primary_contact_name(row)
+    pr = (row.get("pr_heir") or "").strip()
+    role = ""
+    rm = re.search(r"\(([^)]+)\)", pr)
+    if rm:
+        role = rm.group(1).strip()
+    role_bit = (
+        f' <span style="color:#8b949e;font-weight:600;font-size:0.95rem;">'
+        f"({html.escape(role)})</span>"
+        if role else ""
+    )
+    return (
+        f'<div class="ns-primary-contact">'
+        f"PRIMARY CONTACT: <span>{html.escape(name)}</span>{role_bit}"
+        f"</div>"
+    )
+
+
+def _ns_split_blocks_inner(text: str) -> list:
     blocks = [b.strip() for b in _NS_SPLIT_RE.split(text) if b.strip()]
     if len(blocks) <= 1 and len(text) > 40:
         lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
@@ -4938,6 +4966,21 @@ def _ns_split_blocks(raw: str) -> list:
         if not blocks:
             blocks = [text]
     return [b for b in blocks if len(b) >= 20]
+
+
+def _ns_split_blocks(raw: str) -> list:
+    text = (raw or "").strip()
+    if not text:
+        return []
+    if _NS_FILE_SPLIT_RE.search(text):
+        blocks = []
+        for part in _NS_FILE_SPLIT_RE.split(text):
+            part = part.strip()
+            if part:
+                blocks.extend(_ns_split_blocks_inner(part))
+        if blocks:
+            return blocks
+    return _ns_split_blocks_inner(text)
 
 
 def _ns_split_name_entries(raw: str) -> list:
@@ -5167,7 +5210,12 @@ def _ns_extract_pdf_text(data: bytes) -> str:
         return ""
     try:
         reader = _NsPdfReader(io.BytesIO(data))
-        return "\n\n".join((p.extract_text() or "") for p in reader.pages).strip()
+        pages = []
+        for i, page in enumerate(reader.pages):
+            page_text = (page.extract_text() or "").strip()
+            if page_text:
+                pages.append(f"--- PAGE {i + 1} ---\n{page_text}")
+        return "\n\n".join(pages).strip()
     except Exception:
         return ""
 
@@ -5182,27 +5230,66 @@ def _ns_extract_image_text(data: bytes) -> str:
         return ""
 
 
-def _ns_ingest_uploads(uploads: list) -> str:
+def _ns_bytes_to_text(filename: str, data: bytes) -> str:
+    low = (filename or "").lower()
+    if low.endswith(".pdf"):
+        return _ns_extract_pdf_text(data)
+    if low.endswith(_NS_INGEST_EXTS[1:]):
+        return _ns_extract_image_text(data)
+    return ""
+
+
+def _ns_expand_zip(data: bytes) -> list:
+    expanded = []
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            for info in zf.infolist():
+                if info.is_dir():
+                    continue
+                base = Path(info.filename).name
+                if not base or base.startswith(".") or base.startswith("__MACOSX"):
+                    continue
+                low = base.lower()
+                blob = zf.read(info.filename)
+                if low.endswith(".zip"):
+                    expanded.extend(_ns_expand_zip(blob))
+                elif low.endswith(_NS_INGEST_EXTS):
+                    expanded.append((base, blob))
+    except Exception:
+        pass
+    return expanded
+
+
+def _ns_ingest_uploads(uploads: list, max_files: int = _NS_MAX_BATCH_FILES) -> tuple:
     chunks = []
+    processed = 0
     for upl in uploads or []:
+        if processed >= max_files:
+            break
         data = upl.getvalue()
         name = (upl.name or "").lower()
-        if name.endswith(".pdf"):
-            text = _ns_extract_pdf_text(data)
-        elif name.endswith((".png", ".jpg", ".jpeg", ".webp", ".tif", ".tiff", ".bmp")):
-            text = _ns_extract_image_text(data)
-        else:
-            text = ""
-        if text:
-            chunks.append(text)
-    return "\n\n--- FILE ---\n\n".join(chunks)
+        display = upl.name or "upload"
+        if name.endswith(".zip"):
+            for fname, fdata in _ns_expand_zip(data):
+                if processed >= max_files:
+                    break
+                text = _ns_bytes_to_text(fname, fdata)
+                if text:
+                    chunks.append(f"--- FILE: {fname} ---\n\n{text}")
+                    processed += 1
+        elif name.endswith(_NS_INGEST_EXTS):
+            text = _ns_bytes_to_text(name, data)
+            if text:
+                chunks.append(f"--- FILE: {display} ---\n\n{text}")
+                processed += 1
+    return "\n\n".join(chunks), processed
 
 
 def _ns_analyze_inputs(paste: str, uploads: list) -> list:
     parts = []
     if (paste or "").strip():
         parts.append(paste.strip())
-    upload_text = _ns_ingest_uploads(uploads)
+    upload_text, _file_n = _ns_ingest_uploads(uploads)
     if upload_text:
         parts.append(upload_text)
     combined = "\n\n".join(parts).strip()
@@ -5270,18 +5357,92 @@ Scott Hardesty · {DEDICATED_PHONE_LINE}""".format(DEDICATED_PHONE_LINE=DEDICATE
 
 
 # ── AI Agent Pipeline tab helpers (isolated — used only by tab_ai_agent) ──────
-def _ai_agent_daily_summary(results: list) -> str:
-    qual = sum(1 for r in results if _ns_is_qualified(r))
+def _ai_agent_run_daily(paste: str, uploads: list = None) -> dict:
+    """Read-only simulation — does not modify CRM leads or notes."""
+    results = _ns_analyze_inputs(paste or "", uploads or [])
+    qual = [r for r in results if _ns_is_qualified(r)]
+    leads = get_leads()
+    hot_crm = [l for l in leads if _nj_is_qualified_hot_lead(l)]
+    today = datetime.now().strftime("%Y-%m-%d")
+    due_today = [
+        l for l in hot_crm
+        if l.get("follow_up_iso", "9999-12-31") <= today
+        and effective_pipeline_stage(l) != "Closed"
+    ]
+    upload_text, file_n = _ns_ingest_uploads(uploads or [])
+    return {
+        "results": results,
+        "scraped_count": len(results),
+        "qualified_count": len(qual),
+        "queued_in_sim": sum(1 for r in results if r.get("status") == "Queued"),
+        "hot_crm": hot_crm,
+        "due_today": due_today,
+        "files_processed": file_n,
+        "paste_chars": len((paste or "").strip()),
+        "ran_at": datetime.now().isoformat(),
+    }
+
+
+def _ai_agent_daily_summary(sim: dict) -> str:
+    results = sim.get("results") or []
+    qual = sim.get("qualified_count", 0)
+    hot_crm = sim.get("hot_crm") or []
+    due = sim.get("due_today") or []
     return (
         f"DAILY AI AGENT SUMMARY — {datetime.now().strftime('%A %B %d, %Y')}\n\n"
         f"Scott + {PARTNER_NAME} — ProbateGuardian Empire Mode\n\n"
-        f"• Names scraped/qualified today: {len(results)}\n"
+        f"LIVE CRM (read-only scan):\n"
+        f"• 🔥 HOT/Qualified in queue: {len(hot_crm)}\n"
+        f"• Due today / overdue: {len(due)}\n"
+        f"• Total calls logged: {sum(l.get('calls', 0) for l in get_leads())}\n\n"
+        f"TODAY'S SIMULATION ({sim.get('files_processed', 0)} files · "
+        f"{sim.get('paste_chars', 0)} paste chars):\n"
+        f"• Names extracted: {len(results)}\n"
         f"• 🔥 Qualified (HOT): {qual}\n"
-        f"• Pushed to Branton queue: {sum(1 for r in results if r.get('status') == 'Queued')}\n\n"
-        f"NEXT: Branton hits Call Mode → 3-touch minimum → Guardian Kits on appts\n"
-        f"GOAL PATH: 100+ qualified/day → 8–15 closes/mo → recruit 50 eXp agents → license CRM\n\n"
+        f"• Would push to Branton: {qual} (use Beast tab Auto Push or manual confirm)\n\n"
+        f"TOP HOT LEADS RIGHT NOW:\n"
+        + "\n".join(
+            f"  • {l.get('decedent', '—')} — {_lead_poc_name(l)} — "
+            f"{_format_poc_phone(l.get('phone', '')) or 'no phone'} — "
+            f"{l.get('county', '')} · score {l.get('score', 0)}"
+            for l in hot_crm[:8]
+        )
+        + "\n\n"
+        f"NEXT: Branton → Call Mode → empathy opener → May I make a suggestion? → Net Sheet\n"
+        f"GOAL: 100+ qualified/day → 8–15 closes/mo → 50 eXp agents → license CRM\n\n"
         f"Text {DEDICATED_PHONE} when queue is loaded."
     )
+
+
+def _ai_agent_team_sms(sim: dict) -> str:
+    hot = sim.get("hot_crm") or []
+    due = sim.get("due_today") or []
+    lines = [
+        f"ProbateGuardian DAILY AI FEED — {datetime.now().strftime('%A %m/%d/%Y')}",
+        "",
+        f"Scott + Branton — Empire Mode ON",
+        "",
+        f"HOT/Qualified in CRM: {len(hot)}",
+        f"Due today: {len(due)}",
+    ]
+    if sim.get("scraped_count"):
+        lines.append(
+            f"Scrape sim: {sim['scraped_count']} names · {sim['qualified_count']} qualified HOT"
+        )
+    lines.extend(["", "CALL TODAY — TOP HOT LEADS:"])
+    for lead in hot[:6]:
+        poc = _lead_poc_name(lead)
+        phone = _format_poc_phone(lead.get("phone", "")) or "no phone"
+        lines.append(
+            f"• {lead.get('decedent', '—')} | {poc} | {phone} | {lead.get('county', '')}"
+        )
+    lines.extend([
+        "",
+        "PHONE SCRIPT: Empathy → discovery → May I make a suggestion? → Free Net Sheet",
+        "Open Dashboard → Branton Call Mode → 3-touch minimum",
+        f"Questions: {DEDICATED_PHONE}",
+    ])
+    return "\n".join(lines)
 
 
 # ── Header ───────────────────────────────────────────────────────────────────
@@ -6195,7 +6356,7 @@ with tab_dashboard:
     st.session_state.setdefault("call_mode_panel", {})
     st.session_state.setdefault("crm_hot_only_filter", True)
     st.toggle(
-        "🔥 Show Only HOT / Qualified Leads",
+        "🔥 Branton View — Show Only HOT/Qualified",
         key="crm_hot_only_filter",
     )
 
@@ -7552,6 +7713,18 @@ with tab_newspaper:
             text-align: center;
             margin-bottom: 0.5rem;
         }
+        .ns-primary-contact {
+            font-size: 1.28rem;
+            font-weight: 900;
+            color: #e6edf3;
+            margin: 0.35rem 0 0.5rem 0;
+            padding: 0.55rem 0.85rem;
+            background: linear-gradient(90deg, #0d2818 0%, #161b22 100%);
+            border-left: 5px solid #3fb950;
+            border-radius: 8px;
+            line-height: 1.35;
+        }
+        .ns-primary-contact span { color: #58a6ff; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -7563,18 +7736,19 @@ with tab_newspaper:
     )
     st.markdown(
         '<div class="ns-drop-zone">'
-        "Drop 1–20 full Caselink PDFs + screenshot batches + newspaper PDFs — all at once"
+        "Drop full folders (ZIP) or up to 50 Caselink PDFs + screenshot batches + newspaper PDFs — all at once"
         "</div>",
         unsafe_allow_html=True,
     )
     st.markdown(
-        '<p class="ns-drop-hint">Works with 4–6 page Caselink PDFs — drop entire folder if you want.</p>',
+        '<p class="ns-drop-hint">Bulletproof batch: zip entire Caselink folders · 4–6 page PDFs auto-split per page · '
+        "screenshot batches OCR'd together.</p>",
         unsafe_allow_html=True,
     )
 
     ns_uploads = st.file_uploader(
-        "Drop zone — up to 20 files",
-        type=["pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp"],
+        "Drop zone — up to 50 files or ZIP folder",
+        type=["pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp", "zip"],
         accept_multiple_files=True,
         key="ns_beast_drop",
         label_visibility="collapsed",
@@ -7582,14 +7756,15 @@ with tab_newspaper:
     if ns_uploads:
         n_files = len(ns_uploads)
         pdf_n = sum(1 for u in ns_uploads if (u.name or "").lower().endswith(".pdf"))
-        img_n = n_files - pdf_n
+        zip_n = sum(1 for u in ns_uploads if (u.name or "").lower().endswith(".zip"))
+        img_n = n_files - pdf_n - zip_n
         st.markdown(
-            f'<p class="ns-file-count">✓ {n_files} file{"s" if n_files != 1 else ""} loaded'
-            f" ({pdf_n} PDF · {img_n} image) — ready for one-click processing</p>",
+            f'<p class="ns-file-count">✓ {n_files} upload{"s" if n_files != 1 else ""} loaded'
+            f" ({pdf_n} PDF · {zip_n} ZIP · {img_n} image) — ready for one-click processing</p>",
             unsafe_allow_html=True,
         )
-        if n_files > 20:
-            st.warning("Max 20 files per batch — first 20 will be processed.")
+        if n_files > _NS_MAX_BATCH_FILES:
+            st.warning(f"Max {_NS_MAX_BATCH_FILES} files per batch — first {_NS_MAX_BATCH_FILES} will be processed.")
 
     st.link_button("tnpublicnotice.com", _NS_LINKS["tnpublicnotice.com"], use_container_width=True)
 
@@ -7604,29 +7779,33 @@ with tab_newspaper:
 
     st.markdown('<div class="ns-btn-monster-marker"></div>', unsafe_allow_html=True)
     if st.button(
-        "🔥 Process All Files + Qualify + Generate Assessor Links + Push HOT to Branton",
+        "🔥 Process All Files + Qualify + Auto Push 🔥 HOT to Branton",
         use_container_width=True,
         type="primary",
         key="ns_monster_btn",
     ):
-        batch_uploads = (ns_uploads or [])[:20]
+        batch_uploads = (ns_uploads or [])[:_NS_MAX_BATCH_FILES]
         if not ns_raw.strip() and not batch_uploads:
-            st.error("Drop up to 20 PDFs/screenshots or paste notices first.")
+            st.error("Drop up to 50 PDFs/screenshots/ZIPs or paste notices first.")
         else:
             st.session_state.ns_scraper_raw = ns_raw
+            _, ingest_n = _ns_ingest_uploads(batch_uploads)
             results = _ns_analyze_inputs(ns_raw, batch_uploads)
             st.session_state.ns_scraper_results = results
             st.session_state.ns_pipeline_ran = True
             pushed = _ns_push_qualified_to_queue(results) if results else 0
             st.session_state.ns_scraper_results = results
-            file_note = f" from **{len(batch_uploads)}** file{'s' if len(batch_uploads) != 1 else ''}" if batch_uploads else ""
+            file_note = (
+                f" from **{ingest_n or len(batch_uploads)}** file{'s' if (ingest_n or len(batch_uploads)) != 1 else ''}"
+                if batch_uploads else ""
+            )
             if results:
                 st.session_state.ns_push_flash = (
                     f"🔥 Processed{file_note} — **{len(results)}** leads · "
-                    f"**{pushed}** pushed to {PARTNER_NAME}'s HOT queue."
+                    f"**{pushed}** auto-pushed 🔥 HOT to {PARTNER_NAME}'s queue."
                 )
             else:
-                st.warning("No names extracted — try clearer Caselink PDFs or paste names one per line.")
+                st.warning("No names extracted — try clearer Caselink PDFs, ZIP folder, or paste names one per line.")
             st.rerun()
 
     if st.session_state.get("ns_push_flash"):
@@ -7647,6 +7826,7 @@ with tab_newspaper:
         )
         st.data_editor(
             [{
+                "Primary Contact": _ns_primary_contact_name(r),
                 "Decedent": r.get("decedent", ""),
                 "County": r.get("county", ""),
                 "Qualification": f"{r.get('property_likelihood', '')} — {r.get('property_reason', '')}",
@@ -7654,22 +7834,27 @@ with tab_newspaper:
                 "Status": r.get("status", "Ready"),
             } for r in ns_results],
             column_config={
+                "Primary Contact": st.column_config.TextColumn("Primary Contact", disabled=True),
                 "Decedent": st.column_config.TextColumn("Decedent", disabled=True),
                 "County": st.column_config.TextColumn("County", disabled=True),
                 "Qualification": st.column_config.TextColumn("Qualification", disabled=True),
                 "BV / Tax": st.column_config.TextColumn("BV / Tax", disabled=True),
                 "Status": st.column_config.TextColumn("Status", disabled=True),
             },
-            disabled=["Decedent", "County", "Qualification", "BV / Tax", "Status"],
+            disabled=["Primary Contact", "Decedent", "County", "Qualification", "BV / Tax", "Status"],
             hide_index=True,
             use_container_width=True,
             key="ns_beast_table",
         )
 
-        st.markdown("**Per-lead actions**")
+        st.markdown("**Per-lead actions** — Primary Contact + one-click assessors")
         for idx, row in enumerate(ns_results):
             urls = row.get("assessor_urls") or {}
-            st.markdown(f"### {row.get('decedent', '')} · {row.get('county', '')}")
+            st.markdown(_ns_primary_contact_html(row), unsafe_allow_html=True)
+            st.markdown(
+                f"**{row.get('decedent', '')}** · {row.get('county', '')} · "
+                f"{row.get('property_likelihood', '')}"
+            )
             c1, c2, c3, c4, c5, c6 = st.columns(6)
             county_cols = [
                 ("Sumner", "Sumner County"), ("Wilson", "Wilson County"),
@@ -7758,6 +7943,7 @@ with tab_newspaper:
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_ai_agent:
     st.session_state.setdefault("ai_agent_launched", False)
+    st.session_state.setdefault("ai_agent_sim", None)
     st.session_state.setdefault("ai_empire_visible", False)
 
     st.markdown(
@@ -7776,8 +7962,8 @@ with tab_ai_agent:
         .ai-vision b { color: #fff; }
         .ai-launch-marker { display: none; }
         .ai-launch-marker + div[data-testid="stButton"] > button {
-            background: linear-gradient(135deg, #1a1f71 0%, #4f46e5 50%, #7c3aed 100%) !important;
-            border: 2px solid #a78bfa !important;
+            background: linear-gradient(135deg, #0d2818 0%, #238636 45%, #2ea043 100%) !important;
+            border: 2px solid #3fb950 !important;
             color: #fff !important;
             font-weight: 900 !important;
             font-size: 1.15rem !important;
@@ -7798,38 +7984,74 @@ with tab_ai_agent:
         unsafe_allow_html=True,
     )
 
+    ai_paste = st.text_area(
+        "Paste today's notices (or leave blank to run CRM-only daily feed)",
+        value=st.session_state.get("ai_agent_paste", st.session_state.get("ns_scraper_raw", "")),
+        height=200,
+        placeholder="Paste tnpublicnotice / Caselink text here — or run on live CRM HOT queue only…",
+        key="ai_agent_paste",
+    )
+    ai_uploads = st.file_uploader(
+        "Optional file drop (PDF / screenshots / ZIP folder)",
+        type=["pdf", "png", "jpg", "jpeg", "webp", "tif", "tiff", "bmp", "zip"],
+        accept_multiple_files=True,
+        key="ai_agent_uploads",
+    )
+
     st.markdown('<div class="ai-launch-marker"></div>', unsafe_allow_html=True)
     if st.button("🚀 Launch Daily Full AI Agent", use_container_width=True, type="primary", key="ai_launch_btn"):
+        batch = (ai_uploads or [])[:_NS_MAX_BATCH_FILES]
+        sim = _ai_agent_run_daily(ai_paste, batch)
+        st.session_state.ai_agent_sim = sim
         st.session_state.ai_agent_launched = True
         st.rerun()
 
     if st.session_state.get("ai_agent_launched"):
-        st.success("AI Agent Pipeline scaffolded — daily automation ready.")
-        ns_results = st.session_state.get("ns_scraper_results", [])
-        st.markdown("**Daily automation steps**")
-        st.markdown(
-            """
-            1. **Pull notices** — tnpublicnotice.com + Newspaper Scraper Beast tab (PDF drop)
-            2. **Qualify** — assessor one-clicks + property likelihood scoring
-            3. **Push CRM** — 🔥 HOT rows → Branton Call Mode (manual confirm per batch)
-            4. **Hermes export** — Send qualified rows to Hermes Agent for skip-trace
-            5. **Daily summary** — text Scott + Branton (template below)
-            """
+        sim = st.session_state.get("ai_agent_sim") or _ai_agent_run_daily("", [])
+        st.success(
+            f"✅ Daily AI Agent ran — **{len(sim.get('hot_crm', []))}** HOT in CRM · "
+            f"**{sim.get('scraped_count', 0)}** names simulated · "
+            f"**{sim.get('qualified_count', 0)}** qualified"
         )
-        st.code(_ai_agent_daily_summary(ns_results), language="text")
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("🔥 HOT in CRM", len(sim.get("hot_crm", [])))
+        m2.metric("Due Today", len(sim.get("due_today", [])))
+        m3.metric("Scrape Sim", sim.get("scraped_count", 0))
+        m4.metric("Qualified HOT", sim.get("qualified_count", 0))
+
+        st.markdown("**Daily summary — live numbers**")
+        st.code(_ai_agent_daily_summary(sim), language="text")
+
+        team_sms = _ai_agent_team_sms(sim)
+        st.text_area(
+            "Ready text — Scott + Branton",
+            team_sms,
+            height=300,
+            key="ai_team_sms_preview",
+        )
+        st.link_button(
+            "📱 Send Text to Scott + Branton",
+            f"sms:?&body={urllib.parse.quote(team_sms)}",
+            use_container_width=True,
+            type="primary",
+        )
         st.caption(
-            f"Text summary to Scott + {PARTNER_NAME}: {DEDICATED_PHONE} · "
-            "Run Beast tab first to populate live counts."
+            f"Opens your text app with today's HOT leads + phone script reminder · "
+            f"Add Scott + Branton as recipients · {DEDICATED_PHONE}"
         )
+
+        ns_results = sim.get("results") or []
         if ns_results and st.button(
-            f"Push today's {sum(1 for r in ns_results if _ns_is_qualified(r))} qualified → HOT queue",
+            f"Push today's {sim.get('qualified_count', 0)} qualified → HOT queue",
             key="ai_push_qualified",
             use_container_width=True,
         ):
             n = _ns_push_qualified_to_queue(ns_results)
             st.session_state.ns_scraper_results = ns_results
+            sim["queued_in_sim"] = sum(1 for r in ns_results if r.get("status") == "Queued")
+            st.session_state.ai_agent_sim = sim
             if n:
-                st.success(f"🔥 **{n}** leads pushed — no other CRM data modified.")
+                st.success(f"🔥 **{n}** new leads pushed — existing CRM notes untouched.")
                 st.balloons()
             else:
                 st.info("All qualified leads already queued.")
