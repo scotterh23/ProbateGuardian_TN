@@ -6716,6 +6716,7 @@ _SW_PRIMARY_CONTACT_LABEL_RE = re.compile(
     r"^(Best Contact|Primary Contact)\s*:\s*(.*)$",
     re.I,
 )
+_SW_LEAD_SPLIT_RE = re.compile(r"(?=^Lead\s*:)", re.I | re.M)
 _SW_CONTACT_LABELS = frozenset({"best_contact", "primary_contact", "best_person_to_call"})
 _SW_CONTACT_ROLE_RE = re.compile(
     r"^(.+?),\s*(Administrator|Executrix|Executor|Personal Representative|PR|Son|Daughter|"
@@ -6846,7 +6847,13 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
             in_notes = False
 
             if label == "lead":
-                result["decedent"] = _sw_clean_decedent(value)
+                if value:
+                    result["decedent"] = _sw_clean_decedent(value)
+                else:
+                    nxt, nxt_idx = _sw_next_non_label_line(lines, i)
+                    if nxt:
+                        result["decedent"] = _sw_clean_decedent(nxt)
+                        used_line_idxs.add(nxt_idx)
             elif label in ("best_contact", "primary_contact"):
                 contact_raw = value
                 if not contact_raw:
@@ -6985,8 +6992,19 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
     return result
 
 
-def _sw_append_block_as_hot(block: str) -> None:
-    """Smart parse Scott's formatted block → HOT lead for Branton's queue."""
+def _sw_split_bulk_lead_blocks(text: str) -> list:
+    """Split a mass paste — every new 'Lead:' line starts a separate lead block."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    if not re.search(r"^Lead\s*:", text, re.I | re.M):
+        return [text]
+    parts = _SW_LEAD_SPLIT_RE.split(text)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _sw_build_hot_lead_from_block(block: str) -> dict:
+    """Smart parse Scott's formatted block → one HOT lead dict for Branton's queue."""
     scott = _sw_parse_scott_formatted_block(block)
     parsed = {
         "decedent": scott["decedent"],
@@ -7011,22 +7029,45 @@ def _sw_append_block_as_hot(block: str) -> None:
         activity=[{
             "ts": datetime.now().isoformat(),
             "type": "import",
-            "detail": "📥 Scott formatted import → Branton HOT queue",
+            "detail": "📥 Scott bulk import → Branton HOT queue",
         }],
     )
     lead_entry["branton_hot"] = True
-    st.session_state.leads.insert(0, lead_entry)
+    return lead_entry
 
 
-def _sw_import_single_hot(text: str) -> dict:
-    """Append-only — entire paste = exactly ONE HOT lead for Branton."""
-    block = (text or "").strip()
-    if not block:
-        return {"ok": False, "decedent": ""}
+def _sw_block_is_valid(block: str) -> bool:
+    if not (block or "").strip():
+        return False
     scott = _sw_parse_scott_formatted_block(block)
-    _sw_append_block_as_hot(block)
-    persist_leads()
-    return {"ok": True, "decedent": scott.get("decedent") or "New Lead"}
+    if scott.get("decedent") and scott["decedent"] != "New Lead":
+        return True
+    return bool(re.search(r"^Lead\s*:\s*\S", block, re.I | re.M))
+
+
+def _sw_import_bulk_hot(text: str) -> dict:
+    """Append-only — split on Lead: lines, bulk load HOT leads for Branton."""
+    blocks = _sw_split_bulk_lead_blocks(text)
+    if not blocks:
+        return {"ok": False, "added": 0, "skipped": 0}
+
+    new_leads = []
+    skipped = 0
+    for block in blocks:
+        if not _sw_block_is_valid(block):
+            skipped += 1
+            continue
+        new_leads.append(_sw_build_hot_lead_from_block(block))
+
+    if new_leads:
+        st.session_state.leads = new_leads + st.session_state.leads
+        persist_leads()
+
+    return {
+        "ok": len(new_leads) > 0,
+        "added": len(new_leads),
+        "skipped": skipped,
+    }
 
 
 # ── Google Doc bulk import (isolated — used only by tab_add_leads) ────────────
@@ -7198,25 +7239,32 @@ with tab_add_leads:
 
     st.markdown(
         '<div class="gi-import-box">'
-        "<h3>📥 Scott's Formatted Lead Import</h3>"
-        "<p>Paste your <b>full formatted block</b> — one lead at a time. We map <b>Lead</b>, "
-        "<b>Best Contact</b>, <b>Phone</b>, <b>Email</b>, <b>Address</b>, and <b>Summary/Notes</b> "
-        "into one clean HOT lead for Branton.</p></div>",
+        "<h3>📥 Scott's Formatted Lead Import — Mass Upload</h3>"
+        "<p>Paste <b>10–30 full formatted leads</b> at once. Every new <b>Lead:</b> line starts a "
+        "separate clean HOT lead — <b>Best Contact</b>, <b>Phone</b>, <b>Email</b>, <b>Address</b>, "
+        "<b>Summary/Notes</b>, and <b>Status</b> mapped perfectly for Branton.</p></div>",
         unsafe_allow_html=True,
     )
     sw_paste = st.text_area(
-        "Paste my full formatted lead here (one lead at a time)",
-        height=360,
+        "Paste 10–30 full formatted leads here (each block starts with Lead:)",
+        height=420,
         placeholder=(
             "Lead: Mary Johnson\n"
-            "Best Person to Call: John Johnson (Executor)\n"
+            "Best Contact: John Johnson (Executor)\n"
             "Phone: (615) 555-1212\n"
             "Email: john@email.com\n"
             "Address: 4521 Main St, Lebanon, TN 37087\n"
             "Status: 🔥 HOT\n"
             "Summary:\n"
-            "Wilson County probate filing. Executor motivated — vacant property, ready for outreach.\n"
-            "Long notes and paragraphs stay together as one full Notes field."
+            "Wilson County probate filing. Executor motivated — vacant property.\n\n"
+            "Lead: Robert Smith\n"
+            "Best Contact: Jane Smith (Daughter)\n"
+            "Phone: (615) 555-9999\n"
+            "Email: jane@email.com\n"
+            "Address: 717 Braidwood Dr, Nashville, TN 37214\n"
+            "Status: 🔥 HOT\n"
+            "Summary:\n"
+            "Davidson County — ready for Branton outreach."
         ),
         key="sw_simple_paste",
     )
@@ -7242,19 +7290,19 @@ with tab_add_leads:
             if pdf_text:
                 combined = f"{combined}\n\n{pdf_text}".strip() if combined else pdf_text
         if not combined:
-            st.warning("Paste your full formatted lead first.")
+            st.warning("Paste your formatted leads first.")
         else:
-            imported = _sw_import_single_hot(combined)
+            imported = _sw_import_bulk_hot(combined)
             if imported["ok"]:
-                decedent = imported["decedent"]
+                n = imported["added"]
                 st.session_state.sw_add_flash = True
                 st.session_state.sw_add_msg = (
-                    f"✅ **{decedent}** added perfectly as ONE HOT lead with Primary Contact Name, "
-                    "Phone, Email, Address, and full Notes. Ready for Branton."
+                    f"✅ **{n}** lead{'s' if n != 1 else ''} successfully bulk loaded into "
+                    "Branton's HOT Queue 🔥"
                 )
                 st.rerun()
             else:
-                st.warning("Paste your full formatted lead first.")
+                st.warning("No valid leads found — each block must start with Lead: and a decedent name.")
 
     st.markdown("---")
 
