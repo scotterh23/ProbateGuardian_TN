@@ -326,6 +326,26 @@ st.markdown(
         font-size: 1.05rem !important;
         font-weight: 600 !important;
     }
+    .crm-delete-marker { display: none; }
+    .crm-delete-marker + div [data-testid="stButton"] > button {
+        background: linear-gradient(135deg, #8b1a1a, #da3633) !important;
+        color: #ffffff !important;
+        border: 2px solid #f85149 !important;
+        font-weight: 800 !important;
+        font-size: 0.95rem !important;
+        min-height: 2.75rem !important;
+        box-shadow: 0 4px 14px rgba(218, 54, 51, 0.4) !important;
+    }
+    .crm-nuke-marker { display: none; }
+    .crm-nuke-marker + div [data-testid="stButton"] > button {
+        background: linear-gradient(135deg, #6e1010, #b62324 45%, #da3633 100%) !important;
+        color: #ffffff !important;
+        border: 2px solid #f85149 !important;
+        font-weight: 900 !important;
+        font-size: 1.12rem !important;
+        min-height: 3.6rem !important;
+        box-shadow: 0 6px 22px rgba(218, 54, 51, 0.5) !important;
+    }
     .crusher-glow-marker { display: none; }
     .crusher-glow-marker + div [data-testid="stTextArea"] textarea {
         min-height: 14rem !important;
@@ -2080,6 +2100,9 @@ def _render_lead_detail_editor(lead: dict, nav_list: list = None, key_prefix: st
     with aux2:
         st.caption(f"Score **{lead.get('score', 0)}** · Case **{lead.get('case_number', '—')}**")
 
+    st.markdown("---")
+    _render_crm_delete_lead_button(lead, key_prefix=f"{key_prefix}_detail")
+
 
 def _is_high_score_lead(lead: dict) -> bool:
     return int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD
@@ -2180,12 +2203,183 @@ def _nj_nuke_junk_leads() -> dict:
     return {"removed": removed, "kept": len(kept)}
 
 
+def _crm_is_blank_name_lead(lead: dict) -> bool:
+    dec = (lead.get("decedent") or "").strip()
+    if not dec or dec.lower() in _NJ_JUNK_DECEDENT_EXACT:
+        return True
+    if dec in ("New Lead", "Unknown Decedent", "—"):
+        return True
+    return False
+
+
+def _crm_find_duplicate_case_ids(leads: list) -> set:
+    """Duplicate case numbers — keep first in list (newest), flag older copies."""
+    seen = set()
+    dup_ids = set()
+    for lead in leads:
+        case = (lead.get("case_number") or "").strip().upper()
+        if not case:
+            continue
+        if case in seen:
+            dup_ids.add(lead["id"])
+        else:
+            seen.add(case)
+    return dup_ids
+
+
+def _crm_is_nuke_duplicate_junk_candidate(lead: dict, dup_ids: set) -> bool:
+    if lead["id"] in dup_ids:
+        return True
+    if _crm_is_blank_name_lead(lead):
+        return True
+    if _nj_is_junk_lead(lead):
+        return True
+    return False
+
+
+def _crm_preview_nuke_duplicates_junk() -> dict:
+    leads = get_leads()
+    dup_ids = _crm_find_duplicate_case_ids(leads)
+    candidates = [l for l in leads if _crm_is_nuke_duplicate_junk_candidate(l, dup_ids)]
+    return {
+        "candidates": candidates,
+        "count": len(candidates),
+        "protected": len(leads) - len(candidates),
+        "dup_ids": dup_ids,
+    }
+
+
+def _crm_nuke_duplicates_and_junk() -> dict:
+    leads = get_leads()
+    dup_ids = _crm_find_duplicate_case_ids(leads)
+    kept = [l for l in leads if not _crm_is_nuke_duplicate_junk_candidate(l, dup_ids)]
+    removed = len(leads) - len(kept)
+    if removed:
+        kept_ids = {l["id"] for l in kept}
+        st.session_state.leads = kept
+        if st.session_state.get("crm_selected_lead_id") not in kept_ids:
+            st.session_state.pop("crm_selected_lead_id", None)
+        persist_leads()
+    _nj_enable_branton_clean_view()
+    return {"removed": removed, "kept": len(kept)}
+
+
+def delete_lead_by_id(lead_id: str) -> bool:
+    """Permanently remove one lead by ID — append-only safe except explicit delete."""
+    if not lead_id:
+        return False
+    before = len(st.session_state.leads)
+    st.session_state.leads = [l for l in st.session_state.leads if l.get("id") != lead_id]
+    if len(st.session_state.leads) < before:
+        if st.session_state.get("crm_selected_lead_id") == lead_id:
+            st.session_state.pop("crm_selected_lead_id", None)
+        persist_leads()
+        return True
+    return False
+
+
+def _render_crm_delete_lead_button(lead: dict, key_prefix: str = "list") -> None:
+    if not lead or not lead.get("id"):
+        return
+    lid = lead["id"]
+    label = lead.get("decedent") or "this lead"
+    confirm_key = "crm_delete_confirm_id"
+
+    if st.session_state.get(confirm_key) == lid:
+        st.warning(f"🗑️ Permanently delete **{label}**? This cannot be undone.")
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button(
+                "✅ Confirm DELETE",
+                key=f"{key_prefix}_del_yes_{lid}",
+                use_container_width=True,
+                type="primary",
+            ):
+                _flush_dash_notes(lid, show_saved=False)
+                if delete_lead_by_id(lid):
+                    st.session_state.pop(confirm_key, None)
+                    st.session_state.pop("_dash_notes_sync_id", None)
+                    st.session_state.pop("_lead_edit_sync_id", None)
+                    st.rerun()
+        with c2:
+            if st.button("Cancel", key=f"{key_prefix}_del_no_{lid}", use_container_width=True):
+                st.session_state.pop(confirm_key, None)
+                st.rerun()
+    else:
+        st.markdown('<div class="crm-delete-marker"></div>', unsafe_allow_html=True)
+        if st.button("🗑️ DELETE", key=f"{key_prefix}_del_{lid}", use_container_width=True):
+            st.session_state[confirm_key] = lid
+            st.rerun()
+
+
+def _render_crm_nuke_duplicates_panel(key_prefix: str = "dash") -> None:
+    preview = _crm_preview_nuke_duplicates_junk()
+    count = preview["count"]
+    protected = preview["protected"]
+
+    if st.session_state.get("crm_nuke_dup_confirm"):
+        nuke_n = st.session_state.get("crm_nuke_dup_count", count)
+        st.error(
+            f"🚨 About to permanently delete **{nuke_n}** leads "
+            "(Contact TBD, duplicate case numbers, blank names). "
+            f"**{protected}** real leads + all notes stay safe."
+        )
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button(
+                "✅ Confirm NUKE",
+                key=f"{key_prefix}_nuke_yes",
+                use_container_width=True,
+                type="primary",
+            ):
+                result = _crm_nuke_duplicates_and_junk()
+                st.session_state.pop("crm_nuke_dup_confirm", None)
+                st.session_state.pop("crm_nuke_dup_count", None)
+                st.session_state.crm_nuke_flash = (
+                    f"🧹 Removed **{result['removed']}** junk/duplicate leads. "
+                    f"**{result['kept']}** protected."
+                )
+                st.rerun()
+        with c2:
+            if st.button("Cancel", key=f"{key_prefix}_nuke_no", use_container_width=True):
+                st.session_state.pop("crm_nuke_dup_confirm", None)
+                st.session_state.pop("crm_nuke_dup_count", None)
+                st.rerun()
+    else:
+        st.markdown('<div class="crm-nuke-marker"></div>', unsafe_allow_html=True)
+        if st.button(
+            "🚨 NUKE ALL DUPLICATES & JUNK (Safe)",
+            key=f"{key_prefix}_nuke_btn",
+            use_container_width=True,
+        ):
+            st.session_state.crm_nuke_dup_confirm = True
+            st.session_state.crm_nuke_dup_count = count
+            st.rerun()
+        st.caption(
+            f"Flags Contact TBD, duplicate case #s, blank names · "
+            f"**{count}** to remove · **{protected}** protected"
+        )
+
+
+def _crm_is_branton_queue_lead(lead: dict) -> bool:
+    if lead.get("branton_hot") or lead.get("assigned_to_branton"):
+        return True
+    if _nj_is_hot_queue_pushed(lead):
+        return True
+    if _is_hot_lead(lead):
+        return True
+    stage = (lead.get("pipeline_stage") or "").strip()
+    if stage in ("🔥 Hot / New (call today)", "New/Hot", "New"):
+        return True
+    if lead.get("status") in ("New/Hot", "New"):
+        return True
+    return False
+
+
 def _nj_is_qualified_hot_lead(lead: dict) -> bool:
     if effective_pipeline_stage(lead) == "Closed":
         return False
-    if _nj_is_hot_queue_pushed(lead):
-        return True
-    if _is_hot_lead(lead) and _nj_has_real_decedent(lead):
+    if _crm_is_branton_queue_lead(lead) and _nj_has_real_decedent(lead):
         return True
     if int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD and _nj_has_real_decedent(lead):
         return True
@@ -2205,13 +2399,14 @@ def _nj_apply_hot_qualified_filter(leads: list) -> list:
         contact = f"{lead.get('contact_name', '')} {lead.get('heirs', '')}"
         if any(bit in contact for bit in _NJ_VIEW_JUNK_BITS[:2]):
             continue
-        if "Address TBD" in str(lead.get("address") or "") and not lead.get("assigned_to_branton"):
+        if _crm_is_branton_queue_lead(lead) and _nj_has_real_decedent(lead):
+            out.append(lead)
             continue
-        if lead.get("assigned_to_branton") or lead.get("branton_hot"):
+        if "Address TBD" in str(lead.get("address") or "") and not _crm_is_branton_queue_lead(lead):
+            continue
+        if int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD and _nj_has_real_decedent(lead):
             out.append(lead)
-        elif int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD:
-            out.append(lead)
-        elif len(dec.split()) >= 2:
+        elif _nj_has_real_decedent(lead) and len(dec.split()) >= 2:
             out.append(lead)
     return out
 
@@ -7458,10 +7653,16 @@ with tab_dashboard:
     st.session_state.setdefault("call_mode_panel", {})
     if "crm_hot_only_filter" not in st.session_state:
         st.session_state.crm_hot_only_filter = True
+
+    nuke_flash = st.session_state.pop("crm_nuke_flash", None)
+    if nuke_flash:
+        st.success(nuke_flash)
+
     st.toggle(
-        "🔥 Branton View — Show ONLY HOT / Real Leads",
+        "Branton Clean View — Show Only Real Leads",
         key="crm_hot_only_filter",
     )
+    _render_crm_nuke_duplicates_panel(key_prefix="dash_top")
 
     if st.session_state.branton_call_mode:
         hdr_l, hdr_r = st.columns([2, 1])
@@ -7475,6 +7676,8 @@ with tab_dashboard:
                 use_container_width=True,
                 on_click=_exit_branton_call_mode,
             )
+
+        _render_crm_nuke_duplicates_panel(key_prefix="call_mode")
 
         st.markdown('<div class="call-mode-paste-marker"></div>', unsafe_allow_html=True)
         call_paste = st.text_area(
@@ -7712,7 +7915,7 @@ with tab_dashboard:
 
             filter_bits = []
             if st.session_state.get("crm_hot_only_filter", True):
-                filter_bits.append("🔥 HOT / Real only")
+                filter_bits.append("Branton Clean View")
             if st.session_state.get("crm_list_mode") == "last_added":
                 filter_bits.append("📥 last added")
             if st.session_state.get("crm_list_mode") == "due_today":
@@ -7753,6 +7956,7 @@ with tab_dashboard:
                             ):
                                 _select_crm_lead(item["id"])
                                 st.rerun()
+                            _render_crm_delete_lead_button(item, key_prefix=f"card_{item['id']}")
 
                 selected_id = st.session_state.get("crm_selected_lead_id")
                 lead = find_lead(selected_id)
