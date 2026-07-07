@@ -6712,6 +6712,10 @@ _SW_COUNTY_RE = re.compile(
     re.I,
 )
 _SW_HOT_STATUS_RE = re.compile(r"(?:status\s*:\s*)?🔥?\s*hot\b", re.I)
+_SW_PRIMARY_CONTACT_LABEL_RE = re.compile(
+    r"^(Best Contact|Primary Contact)\s*:\s*(.*)$",
+    re.I,
+)
 _SW_CONTACT_LABELS = frozenset({"best_contact", "primary_contact", "best_person_to_call"})
 _SW_CONTACT_ROLE_RE = re.compile(
     r"^(.+?),\s*(Administrator|Executrix|Executor|Personal Representative|PR|Son|Daughter|"
@@ -6727,25 +6731,55 @@ def _sw_clean_decedent(name: str) -> str:
     return cleaned or "New Lead"
 
 
-def _sw_extract_contact_name(raw: str) -> tuple:
-    """Return (clean_primary_contact, role_or_title)."""
+def _sw_primary_contact_from_value(raw: str) -> tuple:
+    """Primary Contact Name — always the text before the first parenthesis."""
     raw = (raw or "").strip()
     if not raw:
         return "", ""
-
-    paren_m = re.match(r"^(.+?)\s*\(([^)]+)\)\s*$", raw)
-    if paren_m:
-        return paren_m.group(1).strip(), paren_m.group(2).strip()
-
+    if "(" in raw:
+        name = raw.split("(", 1)[0].strip()
+        role_m = re.search(r"\(([^)]+)\)", raw)
+        return name, (role_m.group(1).strip() if role_m else "")
     dash_m = re.match(r"^(.+?)\s*[-–—]\s*(.+)$", raw)
     if dash_m and len(dash_m.group(2).split()) <= 5:
         return dash_m.group(1).strip(), dash_m.group(2).strip()
-
     comma_m = _SW_CONTACT_ROLE_RE.match(raw)
     if comma_m:
         return comma_m.group(1).strip(), comma_m.group(2).strip()
-
     return raw, ""
+
+
+def _sw_next_non_label_line(lines: list, start_idx: int) -> tuple:
+    """Return (text, line_index) for the next meaningful line after a label."""
+    for j in range(start_idx + 1, len(lines)):
+        nxt = lines[j].strip()
+        if not nxt:
+            continue
+        if _SW_SCOTT_LABEL_RE.match(nxt):
+            break
+        return nxt, j
+    return "", -1
+
+
+def _sw_force_primary_contact_from_block(block: str) -> tuple:
+    """Always pull Primary Contact from Best Contact: or Primary Contact: line."""
+    lines = block.splitlines()
+    for i, line in enumerate(lines):
+        m = _SW_PRIMARY_CONTACT_LABEL_RE.match(line.strip())
+        if not m:
+            continue
+        inline = m.group(2).strip()
+        if inline:
+            return _sw_primary_contact_from_value(inline)
+        nxt, _ = _sw_next_non_label_line(lines, i)
+        if nxt:
+            return _sw_primary_contact_from_value(nxt)
+    return "", ""
+
+
+def _sw_extract_contact_name(raw: str) -> tuple:
+    """Fallback contact parse for Best Person to Call and similar labels."""
+    return _sw_primary_contact_from_value(raw)
 
 
 def _sw_clean_address(addr: str) -> str:
@@ -6813,7 +6847,17 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
 
             if label == "lead":
                 result["decedent"] = _sw_clean_decedent(value)
-            elif label in _SW_CONTACT_LABELS:
+            elif label in ("best_contact", "primary_contact"):
+                contact_raw = value
+                if not contact_raw:
+                    nxt, nxt_idx = _sw_next_non_label_line(lines, i)
+                    if nxt:
+                        contact_raw = nxt
+                        used_line_idxs.add(nxt_idx)
+                clean_name, role = _sw_primary_contact_from_value(contact_raw)
+                result["contact_name"] = clean_name or contact_raw
+                result["contact_role"] = role
+            elif label == "best_person_to_call" and not result["contact_name"]:
                 clean_name, role = _sw_extract_contact_name(value)
                 result["contact_name"] = clean_name or value
                 result["contact_role"] = role
@@ -6905,6 +6949,11 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
     if not result["email"]:
         _, be = _extract_phone_email_from_text(block)
         result["email"] = be
+
+    forced_name, forced_role = _sw_force_primary_contact_from_block(block)
+    if forced_name:
+        result["contact_name"] = forced_name
+        result["contact_role"] = forced_role
 
     if result["contact_name"]:
         role = (result.get("contact_role") or "").strip()
