@@ -2361,6 +2361,29 @@ def _render_crm_nuke_duplicates_panel(key_prefix: str = "dash") -> None:
         )
 
 
+def _crm_has_real_phone(lead: dict) -> bool:
+    digits = re.sub(r"\D", "", lead.get("phone") or "")
+    return len(digits) >= 10
+
+
+def _crm_passes_clean_view(lead: dict) -> bool:
+    """Branton Clean View — real decedent, real phone, no junk markers."""
+    if not _nj_has_real_decedent(lead):
+        return False
+    if not _crm_has_real_phone(lead):
+        return False
+    dec = str(lead.get("decedent") or "")
+    if any(bit in dec for bit in _NJ_VIEW_JUNK_BITS):
+        return False
+    contact = f"{lead.get('contact_name', '')} {lead.get('heirs', '')}"
+    if "Contact TBD" in contact or any(bit in contact for bit in _NJ_VIEW_JUNK_BITS[:2]):
+        return False
+    addr = str(lead.get("address") or "")
+    if "Address TBD" in addr and not _crm_is_branton_queue_lead(lead):
+        return False
+    return True
+
+
 def _crm_is_branton_queue_lead(lead: dict) -> bool:
     if lead.get("branton_hot") or lead.get("assigned_to_branton"):
         return True
@@ -2389,26 +2412,7 @@ def _nj_is_qualified_hot_lead(lead: dict) -> bool:
 def _nj_apply_hot_qualified_filter(leads: list) -> list:
     if not st.session_state.get("crm_hot_only_filter", True):
         return list(leads)
-    out = []
-    for lead in leads:
-        dec = str(lead.get("decedent") or "").strip()
-        if not dec:
-            continue
-        if any(bit in dec for bit in _NJ_VIEW_JUNK_BITS):
-            continue
-        contact = f"{lead.get('contact_name', '')} {lead.get('heirs', '')}"
-        if any(bit in contact for bit in _NJ_VIEW_JUNK_BITS[:2]):
-            continue
-        if _crm_is_branton_queue_lead(lead) and _nj_has_real_decedent(lead):
-            out.append(lead)
-            continue
-        if "Address TBD" in str(lead.get("address") or "") and not _crm_is_branton_queue_lead(lead):
-            continue
-        if int(lead.get("score") or 0) >= HIGH_SCORE_THRESHOLD and _nj_has_real_decedent(lead):
-            out.append(lead)
-        elif _nj_has_real_decedent(lead) and len(dec.split()) >= 2:
-            out.append(lead)
-    return out
+    return [lead for lead in leads if _crm_passes_clean_view(lead)]
 
 
 def _filter_leads_due_today(leads: list) -> list:
@@ -2445,8 +2449,15 @@ def _set_last_added_list_mode() -> None:
     st.session_state.crm_pipe_filter = "All"
 
 
-def _filter_last_added_leads(leads: list, limit: int = 20) -> list:
-    imported = [l for l in leads if l.get("source") == "simple_add"]
+def _filter_last_added_leads(leads: list, limit: int = 30) -> list:
+    hot_sources = {
+        "simple_add", "google_doc_import", "bulk", "paste", "import", "csv",
+        "Bulk Qualifier", "Lead Workflow", "manual",
+    }
+    imported = [
+        l for l in leads
+        if l.get("source") in hot_sources or l.get("branton_hot") or l.get("assigned_to_branton")
+    ]
     pool = imported if imported else list(leads)
     pool.sort(key=lambda x: x.get("created", ""), reverse=True)
     return pool[:limit]
@@ -4080,7 +4091,13 @@ def _call_mode_set_stage(lead_id: str, stage: str, status: str, label: str) -> N
 
 
 def import_leads_from_text(text: str, source: str = "import") -> int:
-    blocks = [b.strip() for b in re.split(r"\n\s*\n", text.strip()) if b.strip()]
+    text = (text or "").strip()
+    if not text:
+        return 0
+    if re.search(r"^Lead\s*:", text, re.I | re.M):
+        result = _sw_import_bulk_hot(text)
+        return result.get("added", 0)
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", text) if b.strip()]
     count = 0
     for block in blocks:
         parsed = parse_lead(block)
@@ -4091,14 +4108,20 @@ def import_leads_from_text(text: str, source: str = "import") -> int:
             lead_status, lead_pipeline = heat_status, heat_pipeline
         else:
             lead_status, lead_pipeline = qual_status, "Warm"
-        st.session_state.leads.insert(0, build_lead(
+        lead_entry = build_lead(
             parsed,
             pipeline_stage=lead_pipeline,
             source=source,
             score=score,
             status=lead_status,
             notes=initial_notes_from_block(block),
-        ))
+        )
+        if score >= HIGH_SCORE_THRESHOLD or lead_pipeline == "New/Hot":
+            lead_entry["assigned_to_branton"] = True
+            lead_entry["branton_hot"] = True
+            lead_entry["assigned_to"] = PARTNER_NAME
+            lead_entry["pipeline_stage"] = "🔥 Hot / New (call today)"
+        st.session_state.leads.insert(0, lead_entry)
         count += 1
     persist_leads()
     return count
@@ -6911,7 +6934,7 @@ _SW_PRIMARY_CONTACT_LABEL_RE = re.compile(
     r"^(Best Contact|Primary Contact)\s*:\s*(.*)$",
     re.I,
 )
-_SW_LEAD_SPLIT_RE = re.compile(r"(?=^Lead\s*:)", re.I | re.M)
+_SW_LEAD_SPLIT_RE = re.compile(r"(?=^Lead\s*:\s*)", re.I | re.M)
 _SW_CONTACT_LABELS = frozenset({"best_contact", "primary_contact", "best_person_to_call"})
 _SW_CONTACT_ROLE_RE = re.compile(
     r"^(.+?),\s*(Administrator|Executrix|Executor|Personal Representative|PR|Son|Daughter|"
@@ -7189,13 +7212,14 @@ def _sw_parse_scott_formatted_block(block: str) -> dict:
 
 def _sw_split_bulk_lead_blocks(text: str) -> list:
     """Split a mass paste — every new 'Lead:' line starts a separate lead block."""
-    text = (text or "").strip()
+    text = (text or "").strip().lstrip("\ufeff").replace("\r\n", "\n")
     if not text:
         return []
     if not re.search(r"^Lead\s*:", text, re.I | re.M):
         return [text]
     parts = _SW_LEAD_SPLIT_RE.split(text)
-    return [p.strip() for p in parts if p.strip()]
+    blocks = [p.strip() for p in parts if p.strip()]
+    return blocks if blocks else [text]
 
 
 def _sw_build_hot_lead_from_block(block: str) -> dict:
@@ -7659,7 +7683,7 @@ with tab_dashboard:
         st.success(nuke_flash)
 
     st.toggle(
-        "Branton Clean View — Show Only Real Leads",
+        "Branton Clean View — Real Leads with Phones",
         key="crm_hot_only_filter",
     )
     _render_crm_nuke_duplicates_panel(key_prefix="dash_top")
@@ -7732,6 +7756,8 @@ with tab_dashboard:
                 st.button("Listed", key=f"cm_list_{lid}", use_container_width=True, on_click=_call_mode_set_stage, args=(lid, "Listed / Under Contract", "Under Contract", "Listed"))
             with b6:
                 st.button("Closed", key=f"cm_close_{lid}", use_container_width=True, on_click=_call_mode_set_stage, args=(lid, "Closed / Sold", "Closed", "Closed"))
+
+            _render_crm_delete_lead_button(lead, key_prefix=f"cm_{lid}")
 
             panel = st.session_state.get("call_mode_panel") or {}
             if panel.get("lead_id") == lid:
@@ -7824,14 +7850,31 @@ with tab_dashboard:
         dash_tab1, dash_tab2, dash_tab3 = st.tabs(["📋 Leads Table", "📅 Follow-Up Scheduler", "📥 Import Leads"])
 
         with dash_tab3:
-            st.markdown("**Paste county data** (blank line between leads) or **upload CSV**.")
-            import_text = st.text_area("Bulk Import", height=160, key="crm_import_text", placeholder="Estate of...\nAddress...\nWilson County")
+            st.markdown(
+                "**Mass paste** — 10+ Scott formatted blocks (`Lead:` per block) or classic county data. "
+                "All HOT imports go straight to Branton's queue."
+            )
+            import_text = st.text_area(
+                "Bulk Import",
+                height=220,
+                key="crm_import_text",
+                placeholder=(
+                    "Lead: Mary Johnson\nBest Contact: John Johnson (Executor)\n"
+                    "Phone: (615) 555-1212\nEmail: john@email.com\n"
+                    "Address: 4521 Main St, Lebanon, TN 37087\nStatus: 🔥 HOT\nSummary: …\n\n"
+                    "Lead: Robert Smith\nBest Contact: Jane Smith\nPhone: …"
+                ),
+            )
             ic1, ic2 = st.columns(2)
             with ic1:
                 if st.button("Import Pasted Leads", use_container_width=True, type="primary"):
                     if import_text.strip():
                         n = import_leads_from_text(import_text, source="paste")
-                        st.success(f"✅ Imported {n} leads.")
+                        st.session_state.crm_list_mode = "last_added"
+                        st.success(
+                            f"✅ **{n}** lead{'s' if n != 1 else ''} imported to Branton's HOT queue — "
+                            "showing in list now."
+                        )
                         st.rerun()
                     else:
                         st.warning("Paste lead data first.")
