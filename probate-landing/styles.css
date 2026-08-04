@@ -136,11 +136,28 @@ a:hover {
 }
 
 .logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
   font-weight: 700;
   font-size: 1rem;
   color: var(--text);
   text-decoration: none;
   line-height: 1.2;
+}
+
+.logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  display: block;
+  flex-shrink: 0;
+  /* Keep metallic shield crisp on light header */
+  background: transparent;
+}
+
+.logo-text {
+  white-space: nowrap;
 }
 
 .logo-mark {
@@ -149,6 +166,14 @@ a:hover {
 
 .logo-accent {
   color: var(--green-600);
+}
+
+.hero-logo {
+  display: block;
+  width: 112px;
+  height: 112px;
+  object-fit: contain;
+  margin: 0 auto 1.1rem;
 }
 
 .header-phone {
@@ -1006,12 +1031,41 @@ a:hover {
   color: #fff;
 }
 
+/* TN TREC Rule 1260-02-.12 — firm name + firm phone (conspicuous) */
+.footer-trec {
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  padding-top: 1.25rem;
+  margin: 0;
+}
+
+.footer-trec-line,
+.footer-trec-phones {
+  margin: 0 0 0.45rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.88rem;
+}
+
+/* Firm name letter size same or larger than agent names (TREC) */
+.footer-trec .firm-name {
+  font-weight: 700;
+  font-size: 1.08em;
+  letter-spacing: 0.01em;
+  color: #fff;
+}
+
+.footer-trec-sep {
+  margin: 0 0.4rem;
+  opacity: 0.55;
+}
+
 .footer-disclaimer {
   font-size: 0.78rem;
   opacity: 0.65;
   line-height: 1.5;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   padding-top: 1.25rem;
+  margin-top: 0.5rem;
 }
 
 /* Mobile FAB */

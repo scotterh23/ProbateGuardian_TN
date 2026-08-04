@@ -12,6 +12,20 @@ PHONE = "(615) 669-7075"
 PHONE_TEL = "6156697075"
 PHONE_LINK = f'Call or text <strong>{PHONE}</strong>'
 
+# TN TREC Rule 1260-02-.12 — firm name + firm phone on every page
+FOOTER_TREC = """      <div class="footer-trec" role="contentinfo" aria-label="Tennessee real estate brokerage disclosure">
+        <p class="footer-trec-line">
+          Scott Hardesty, <span class="firm-name">eXp Realty</span>
+          <span class="footer-trec-sep" aria-hidden="true">|</span>
+          Branton Walker, <span class="firm-name">The Forward Realty Group LLC</span>
+        </p>
+        <p class="footer-trec-phones">
+          <span class="firm-name">eXp Realty</span> 888-519-5113
+          <span class="footer-trec-sep" aria-hidden="true">·</span>
+          <span class="firm-name">The Forward Realty Group LLC</span> (615) 554-4890
+        </p>
+      </div>"""
+
 NAV = """      <nav class="header-nav" aria-label="Main">
         <a href="/"{home_current}>Home</a>
         <a href="/roadmap/"{road_current}>Family Roadmap</a>
@@ -63,14 +77,18 @@ def shell(
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="{css_prefix}styles.css" />
+  <link rel="icon" type="image/png" sizes="32x32" href="/images/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="16x16" href="/images/favicon-16.png" />
+  <link rel="apple-touch-icon" href="/images/apple-touch-icon.png" />
+  <link rel="icon" href="/images/pg-logo.png" type="image/png" />
 </head>
 <body>
   <a class="skip-link" href="#main">Skip to content</a>
   <header class="site-header">
     <div class="container header-inner">
       <a href="/" class="logo" aria-label="Probate Guardians TN home">
-        <span class="logo-mark" aria-hidden="true">🛡️</span>
-        Probate Guardians <span class="logo-accent">TN</span>
+        <img src="/images/pg-logo.png" alt="" class="logo-img" width="40" height="40" decoding="async" />
+        <span class="logo-text">Probate Guardians <span class="logo-accent">TN</span></span>
       </a>
 {nav}
       <a href="tel:{PHONE_TEL}" class="header-phone">
@@ -90,8 +108,9 @@ def shell(
       <nav class="footer-nav" aria-label="Footer">
 {FOOTER_NAV}
       </nav>
+{FOOTER_TREC}
       <p class="footer-disclaimer">
-        Scott Hardesty &amp; Branton Walker • Probate Guardians TN • Serving all of Middle Tennessee • Call or text {PHONE_LINK}<br />
+        Probate Guardians TN · Serving all of Middle Tennessee · Call or text <strong>{PHONE}</strong><br />
         Not legal advice. Probate Guardians TN provides real estate coordination only. All property sales subject to court approval where required. © <span id="year"></span> Scott Hardesty &amp; Branton Walker.
       </p>
     </div>
