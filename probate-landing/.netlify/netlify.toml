@@ -7,9 +7,9 @@ redirects = []
 [functions."*"]
 
 [build]
-publish = "/Users/scott/ProbateGuardian_TN/probate-landing/probate-landing"
+publish = "."
 publishOrigin = "config"
-base = "/Users/scott/ProbateGuardian_TN/probate-landing"
+base = "probate-landing"
 
 [build.environment]
 
