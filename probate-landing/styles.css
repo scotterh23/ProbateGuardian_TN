@@ -2108,6 +2108,126 @@ body.gk-modal-open {
   margin-top: 0.75rem;
 }
 
+/* Ranking-page lead forms, FAQ, standout note */
+.lead-form {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.lead-form-label {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--green-800);
+  margin-bottom: -0.35rem;
+}
+
+.lead-form input {
+  width: 100%;
+  padding: 0.9rem 1rem;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  color: var(--text);
+  min-height: 48px;
+}
+
+.lead-form input:focus {
+  outline: 2px solid var(--green-500);
+  outline-offset: 1px;
+  border-color: var(--green-500);
+}
+
+.form-error {
+  text-align: center;
+  padding: 1rem;
+  background: #fdecea;
+  border-radius: var(--radius-sm);
+  color: #7a1f1a;
+  font-weight: 500;
+}
+
+.standout-note {
+  background: #fff;
+  border-left: 4px solid var(--green-500);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 1.15rem 1.25rem;
+  margin-top: 1.5rem;
+  box-shadow: 0 4px 14px rgba(15, 41, 34, 0.05);
+}
+
+.standout-note p {
+  margin: 0;
+  font-size: 0.98rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+
+.faq-list {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.faq-item {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 14px rgba(15, 41, 34, 0.05);
+}
+
+.faq-item summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--green-800);
+  padding: 1rem 1.15rem;
+  list-style: none;
+}
+
+.faq-item summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq-item summary::after {
+  content: "+";
+  float: right;
+  color: var(--green-600);
+  font-weight: 700;
+}
+
+.faq-item[open] summary::after {
+  content: "–";
+}
+
+.faq-item[open] summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.faq-answer {
+  padding: 1rem 1.15rem 1.15rem;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.footer-counties {
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.footer-counties a {
+  color: var(--green-400);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.footer-counties a:hover {
+  color: #fff;
+}
+
 @media print {
   .site-header,
   .mobile-call-fab,
