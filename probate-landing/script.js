@@ -38,6 +38,64 @@
     });
   }
 
+  function bindNetlifyLeadForm(form) {
+    var wrap = form.parentNode;
+    var success = wrap.querySelector(".form-success");
+    var errorEl = wrap.querySelector(".form-error");
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      if (!form.reportValidity()) {
+        return;
+      }
+      var data = new FormData(form);
+      var params = new URLSearchParams();
+      data.forEach(function (value, key) {
+        if (key !== "bot-field" || value) {
+          params.append(key, value);
+        }
+      });
+      if (!params.get("form-name")) {
+        params.append("form-name", form.getAttribute("name") || "");
+      }
+      var submitBtn = form.querySelector('button[type="submit"]');
+      var original = submitBtn ? submitBtn.textContent : "";
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.textContent = "Sending…";
+      }
+      if (errorEl) {
+        errorEl.classList.add("hidden");
+      }
+      fetch(form.getAttribute("action") || window.location.pathname, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: params.toString(),
+      })
+        .then(function (res) {
+          if (!res.ok) {
+            throw new Error("submit failed");
+          }
+          form.classList.add("hidden");
+          if (success) {
+            success.classList.remove("hidden");
+          }
+        })
+        .catch(function () {
+          if (errorEl) {
+            errorEl.classList.remove("hidden");
+          }
+        })
+        .finally(function () {
+          if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.textContent = original;
+          }
+        });
+    });
+  }
+
+  document.querySelectorAll("form.js-netlify-lead").forEach(bindNetlifyLeadForm);
+
   var modal = document.getElementById("guardian-kit-modal");
   if (!modal) {
     return;
