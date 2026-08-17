@@ -92,6 +92,7 @@ def shell(
       </a>
 {nav}
       <a href="tel:{PHONE_TEL}" class="header-phone">
+        <span class="header-phone-label">Open 24 hours</span>
         <span class="header-phone-num">{PHONE_LINK}</span>
       </a>
     </div>
@@ -110,7 +111,7 @@ def shell(
       </nav>
 {FOOTER_TREC}
       <p class="footer-disclaimer">
-        Probate Guardians TN · Serving all of Middle Tennessee · Call or text <strong>{PHONE}</strong><br />
+        Probate Guardians TN · Serving all of Middle Tennessee · Open 24 hours · Call or text <strong>{PHONE}</strong><br />
         Not legal advice. Probate Guardians TN provides real estate coordination only. All property sales subject to court approval where required. © <span id="year"></span> Scott Hardesty &amp; Branton Walker.
       </p>
     </div>
