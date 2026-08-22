@@ -2258,6 +2258,118 @@ body.gk-modal-open {
   color: #fff;
 }
 
+/* Executor Guide landing */
+.eg-hero {
+  padding: 2rem 0 2.5rem;
+  background: linear-gradient(165deg, var(--cream) 0%, var(--warm-white) 55%, #eef5f0 100%);
+}
+
+.eg-hero-grid {
+  display: grid;
+  gap: 1.75rem;
+  align-items: start;
+}
+
+.eg-hero h1 {
+  font-family: var(--font-serif);
+  font-size: clamp(1.55rem, 5vw, 2.35rem);
+  font-weight: 600;
+  line-height: 1.22;
+  color: var(--green-900);
+  margin-bottom: 0.85rem;
+}
+
+.eg-sub {
+  font-size: 1.05rem;
+  color: var(--text-muted);
+  margin-bottom: 1.1rem;
+  max-width: 38rem;
+}
+
+.eg-bullets {
+  margin: 0;
+  padding-left: 1.15rem;
+  color: var(--text);
+}
+
+.eg-bullets li {
+  margin-bottom: 0.4rem;
+}
+
+.eg-card {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.35rem 1.25rem 1.2rem;
+  box-shadow: var(--shadow);
+}
+
+.eg-card h2 {
+  font-family: var(--font-serif);
+  font-size: 1.35rem;
+  color: var(--green-800);
+  margin-bottom: 0.35rem;
+}
+
+.eg-card-lead {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin-bottom: 1rem;
+}
+
+.eg-form .eg-label {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--green-800);
+  margin: 0.65rem 0 0.25rem;
+}
+
+.eg-form input,
+.eg-form select {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-family: inherit;
+  font-size: 1rem;
+  background: var(--warm-white);
+}
+
+.eg-form-error {
+  color: #b62324;
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0.65rem 0 0;
+}
+
+.eg-success {
+  text-align: left;
+}
+
+.eg-success p {
+  margin-bottom: 0.85rem;
+}
+
+.eg-chapters {
+  margin: 0;
+  padding-left: 1.2rem;
+}
+
+.eg-chapters li {
+  margin-bottom: 0.75rem;
+  line-height: 1.5;
+}
+
+@media (min-width: 860px) {
+  .eg-hero-grid {
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 2.25rem;
+    align-items: center;
+  }
+}
+
 @media print {
   .site-header,
   .mobile-call-fab,
