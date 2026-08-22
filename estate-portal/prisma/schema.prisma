@@ -1,0 +1,132 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  EXECUTOR
+  HEIR
+  ATTORNEY
+}
+
+enum EstateStatus {
+  LETTERS
+  VALUATION
+  LISTED
+  UNDER_CONTRACT
+  CLOSED
+}
+
+enum DocumentCategory {
+  WILL
+  LETTERS
+  APPRAISAL
+  PHOTOS
+  CONTRACTS
+  OTHER
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         UserRole
+  createdAt    DateTime @default(now())
+
+  memberships EstateMember[]
+  updates     EstateUpdate[]
+  comments    UpdateComment[]
+  documents   Document[]
+  invitesSent Invite[]       @relation("InvitedBy")
+}
+
+model Estate {
+  id        String       @id @default(cuid())
+  nickname  String
+  address   String
+  city      String
+  county    String
+  status    EstateStatus @default(LETTERS)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  members   EstateMember[]
+  updates   EstateUpdate[]
+  documents Document[]
+  invites   Invite[]
+}
+
+model EstateMember {
+  id        String   @id @default(cuid())
+  estateId  String
+  userId    String
+  role      UserRole
+  createdAt DateTime @default(now())
+
+  estate Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([estateId, userId])
+}
+
+model EstateUpdate {
+  id        String   @id @default(cuid())
+  estateId  String
+  authorId  String
+  body      String
+  fileName  String?
+  filePath  String?
+  fileMime  String?
+  createdAt DateTime @default(now())
+
+  estate   Estate          @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  author   User            @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments UpdateComment[]
+}
+
+model UpdateComment {
+  id        String   @id @default(cuid())
+  updateId  String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  update EstateUpdate @relation(fields: [updateId], references: [id], onDelete: Cascade)
+  author User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model Document {
+  id         String           @id @default(cuid())
+  estateId   String
+  uploadedById String
+  category   DocumentCategory @default(OTHER)
+  fileName   String
+  filePath   String
+  fileMime   String
+  fileSize   Int
+  createdAt  DateTime         @default(now())
+
+  estate     Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  uploadedBy User   @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+}
+
+model Invite {
+  id        String    @id @default(cuid())
+  email     String
+  role      UserRole
+  estateId  String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  invitedById String
+
+  estate    Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  invitedBy User   @relation("InvitedBy", fields: [invitedById], references: [id], onDelete: Cascade)
+}

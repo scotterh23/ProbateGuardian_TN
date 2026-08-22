@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-navy: #0b1f3a;
+  --color-navy-soft: #163257;
+  --color-mist: #eef2f6;
+  --color-line: #d7dee8;
+  --color-muted: #5b6778;
+  --color-paper: #f7f8fa;
+  --color-accent: #2d6a4f;
+  --color-accent-soft: #e7f3ec;
+  --font-sans: var(--font-source-sans);
+  --font-serif: var(--font-source-serif);
+}
+
+html,
+body {
+  background: #f7f8fa;
+  color: #0b1f3a;
+}
+
+body {
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+.font-serif {
+  font-family: var(--font-serif), Georgia, serif;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(11, 31, 58, 0.04);
+}
