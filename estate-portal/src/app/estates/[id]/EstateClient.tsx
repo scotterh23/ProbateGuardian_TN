@@ -290,7 +290,9 @@ export function InviteForm({ estateId }: { estateId: string }) {
       setError(data.error || "Could not create invite.");
       return;
     }
-    setUrl(data.inviteUrl);
+    const path = data.invitePath || `/invite/${String(data.inviteUrl || "").split("/").pop() || ""}`;
+    const origin = typeof window !== "undefined" ? window.location.origin : "";
+    setUrl(`${origin}${path.startsWith("/") ? path : `/${path}`}`);
     (e.target as HTMLFormElement).reset();
   }
 

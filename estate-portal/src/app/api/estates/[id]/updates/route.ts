@@ -29,8 +29,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (file.size > MAX_UPLOAD_BYTES) {
       return NextResponse.json({ error: "Files must be 12MB or smaller." }, { status: 400 });
     }
-    const saved = await saveUpload(file);
-    fileMeta = { fileName: saved.fileName, filePath: saved.storedName, fileMime: saved.mime };
+    try {
+      const saved = await saveUpload(file);
+      fileMeta = { fileName: saved.fileName, filePath: saved.storedName, fileMime: saved.mime };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const needsBlob =
+        process.env.VERCEL === "1" || /blob|token|oidc|store/i.test(message);
+      return NextResponse.json(
+        {
+          error: needsBlob
+            ? "File storage is not configured. Create a Private Vercel Blob store and connect it to this Vercel project."
+            : "Could not attach that file.",
+        },
+        { status: 500 },
+      );
+    }
   }
 
   const update = await prisma.estateUpdate.create({

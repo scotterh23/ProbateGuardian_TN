@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { createSession } from "@/lib/auth";
+import { publicAppOrigin } from "@/lib/origin";
 
 const schema = z.object({
   token: z.string().min(10),
@@ -10,16 +11,40 @@ const schema = z.object({
   password: z.string().min(8),
 });
 
+async function readPayload(req: Request) {
+  const contentType = req.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return schema.safeParse(await req.json().catch(() => null));
+  }
+  const form = await req.formData().catch(() => null);
+  if (!form) return schema.safeParse(null);
+  return schema.safeParse({
+    token: form.get("token"),
+    name: form.get("name"),
+    password: form.get("password"),
+  });
+}
+
+function fail(req: Request, token: string | undefined, message: string, wantsJson: boolean) {
+  if (wantsJson) {
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+  const origin = publicAppOrigin(req);
+  const url = new URL(token ? `/invite/${token}` : "/login", origin);
+  url.searchParams.set("error", message);
+  return NextResponse.redirect(url, 303);
+}
+
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => null);
-  const parsed = schema.safeParse(body);
+  const wantsJson = (req.headers.get("content-type") || "").includes("application/json");
+  const parsed = await readPayload(req);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Name and an 8+ character password are required." }, { status: 400 });
+    return fail(req, undefined, "Name and an 8+ character password are required.", wantsJson);
   }
 
   const invite = await prisma.invite.findUnique({ where: { token: parsed.data.token } });
   if (!invite || invite.usedAt || invite.expiresAt < new Date()) {
-    return NextResponse.json({ error: "This invite is invalid or has expired." }, { status: 400 });
+    return fail(req, parsed.data.token, "This invite is invalid or has expired.", wantsJson);
   }
 
   const email = invite.email.toLowerCase();
@@ -59,12 +84,12 @@ export async function POST(req: Request) {
     return saved;
   });
 
+  const origin = publicAppOrigin(req);
   const redirectTo = `/estates/${invite.estateId}`;
-  const res = NextResponse.json({
-    ok: true,
-    estateId: invite.estateId,
-    redirectTo,
-  });
+  const res = wantsJson
+    ? NextResponse.json({ ok: true, estateId: invite.estateId, redirectTo })
+    : NextResponse.redirect(new URL(redirectTo, origin), 303);
+
   await createSession(
     {
       id: user.id,

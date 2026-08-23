@@ -43,7 +43,7 @@ export async function createSession(user: SessionUser, response?: NextResponse) 
 
   const options = {
     ...COOKIE_OPTIONS,
-    secure: process.env.NODE_ENV === "production",
+    secure: process.env.NODE_ENV === "production" || process.env.VERCEL === "1",
   };
 
   if (response) {

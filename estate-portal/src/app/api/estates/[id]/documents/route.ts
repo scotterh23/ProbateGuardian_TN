@@ -33,17 +33,31 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Files must be 12MB or smaller." }, { status: 400 });
   }
 
-  const saved = await saveUpload(file);
-  const doc = await prisma.document.create({
-    data: {
-      estateId: id,
-      uploadedById: session.id,
-      category: category as "WILL" | "LETTERS" | "APPRAISAL" | "PHOTOS" | "CONTRACTS" | "OTHER",
-      fileName: saved.fileName,
-      filePath: saved.storedName,
-      fileMime: saved.mime,
-      fileSize: saved.size,
-    },
-  });
-  return NextResponse.json({ document: doc });
+  try {
+    const saved = await saveUpload(file);
+    const doc = await prisma.document.create({
+      data: {
+        estateId: id,
+        uploadedById: session.id,
+        category: category as "WILL" | "LETTERS" | "APPRAISAL" | "PHOTOS" | "CONTRACTS" | "OTHER",
+        fileName: saved.fileName,
+        filePath: saved.storedName,
+        fileMime: saved.mime,
+        fileSize: saved.size,
+      },
+    });
+    return NextResponse.json({ document: doc });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    const needsBlob =
+      process.env.VERCEL === "1" || /blob|token|oidc|store/i.test(message);
+    return NextResponse.json(
+      {
+        error: needsBlob
+          ? "File storage is not configured. Create a Private Vercel Blob store and connect it to this Vercel project."
+          : "Could not upload that file.",
+      },
+      { status: 500 },
+    );
+  }
 }

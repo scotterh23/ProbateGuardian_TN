@@ -1,9 +1,18 @@
 import { mkdir, writeFile, readFile } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
+import { get, put } from "@vercel/blob";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+const BLOB_PREFIX = "estate-portal/";
+
+function useBlob() {
+  return Boolean(
+    process.env.BLOB_READ_WRITE_TOKEN ||
+      (process.env.VERCEL === "1" && process.env.BLOB_STORE_ID),
+  );
+}
 
 export function getUploadedFile(form: FormData, key = "file"): File | null {
   const value = form.get(key);
@@ -15,21 +24,40 @@ export function getUploadedFile(form: FormData, key = "file"): File | null {
 }
 
 export async function saveUpload(file: File) {
-  await mkdir(UPLOAD_DIR, { recursive: true });
-  const ext = path.extname(file.name || "").slice(0, 12);
+  const ext = path.extname(file.name || "").replace(/[^\w.]/g, "").slice(0, 12);
   const stored = `${randomUUID()}${ext}`;
-  const full = path.join(UPLOAD_DIR, stored);
   const buf = Buffer.from(await file.arrayBuffer());
-  await writeFile(full, buf);
-  return {
-    storedName: stored,
-    fileName: file.name || stored,
-    mime: file.type || "application/octet-stream",
-    size: buf.length,
-  };
+  const mime = file.type || "application/octet-stream";
+  const fileName = file.name || stored;
+
+  if (useBlob()) {
+    const pathname = `${BLOB_PREFIX}${stored}`;
+    const blob = await put(pathname, buf, {
+      access: "private",
+      addRandomSuffix: false,
+      contentType: mime,
+    });
+    return {
+      storedName: blob.pathname || pathname,
+      fileName,
+      mime,
+      size: buf.length,
+    };
+  }
+
+  await mkdir(UPLOAD_DIR, { recursive: true });
+  await writeFile(path.join(UPLOAD_DIR, stored), buf);
+  return { storedName: stored, fileName, mime, size: buf.length };
 }
 
 export async function readUpload(storedName: string) {
+  if (useBlob() || storedName.includes("/") || storedName.startsWith("http")) {
+    const result = await get(storedName, { access: "private" });
+    if (!result?.stream) {
+      throw new Error("File not found in blob storage.");
+    }
+    return Buffer.from(await new Response(result.stream).arrayBuffer());
+  }
   const full = path.join(UPLOAD_DIR, path.basename(storedName));
   return readFile(full);
 }

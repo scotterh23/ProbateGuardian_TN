@@ -3,8 +3,18 @@ import { prisma } from "@/lib/db";
 import { BrandLogo } from "@/components/BrandLogo";
 import { InviteAcceptForm } from "./InviteAcceptForm";
 
-export default async function InvitePage({ params }: { params: Promise<{ token: string }> }) {
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+export default async function InvitePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ token: string }>;
+  searchParams: Promise<{ error?: string }>;
+}) {
   const { token } = await params;
+  const { error } = await searchParams;
   const invite = await prisma.invite.findUnique({
     where: { token },
     include: {
@@ -27,7 +37,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           title="This invite was already used"
           body="If you already created your access, sign in to open the estate."
           href={`/login?next=${encodeURIComponent(`/estates/${invite.estateId}`)}`}
-          action="Sign in"
+          action="Sign in to this estate"
         />
       ) : invite.expiresAt < new Date() ? (
         <InviteMessage
@@ -40,6 +50,7 @@ export default async function InvitePage({ params }: { params: Promise<{ token: 
           email={invite.email}
           role={invite.role}
           estate={invite.estate}
+          error={error}
         />
       )}
     </div>

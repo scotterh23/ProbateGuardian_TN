@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 const PUBLIC = ["/login", "/invite", "/api/auth/login", "/api/auth/logout"];
 
 function isPublic(pathname: string) {
-  if (pathname.startsWith("/invite/")) return true;
+  if (pathname === "/invite" || pathname.startsWith("/invite/")) return true;
   if (pathname.startsWith("/api/auth/accept-invite")) return true;
   return PUBLIC.includes(pathname);
 }

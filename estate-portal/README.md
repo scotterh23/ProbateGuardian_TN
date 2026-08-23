@@ -40,7 +40,9 @@ AUTH_URL="http://localhost:3000"
 | `DATABASE_URL` | App queries. On Neon, use the **pooled** connection (`-pooler` host). |
 | `DIRECT_URL` | Migrations. On Neon, use the **unpooled** / direct connection. If you only have one URL, set both to the same **direct** string. |
 | `AUTH_SECRET` | JWT cookie signing |
-| `AUTH_URL` | Public site URL (invite links) |
+| `AUTH_URL` | Public site origin (invite links). Use `https://portal.probateguardians.com` in production, not `/login`. |
+| `BLOB_STORE_ID` | Set automatically when a Vercel Blob store is connected to the project |
+| `BLOB_READ_WRITE_TOKEN` | Optional static blob token (needed off Vercel; OIDC is used on Vercel) |
 
 SQLite is no longer used. Local `.env` must be a Postgres URL (Neon branch or local Postgres).
 
@@ -119,7 +121,9 @@ See the deploy checklist in the project notes after this change. In short:
 3. Redeploy so `prisma migrate deploy` runs during build
 4. Do **not** seed production unless you want the demo accounts
 
-Uploads still use the local disk in Phase 1 (`uploads/`). On Vercel that is ephemeral — S3 comes later.
+Uploads use **Vercel Blob** in production (private store). Locally they still write to `uploads/` unless a blob token is present.
+
+Create a **Private** Blob store in the Vercel dashboard, connect it to this project (Production and Preview). That sets `BLOB_STORE_ID` and OIDC so the app can store wills, letters, and photos off the serverless filesystem.
 
 ## Security notes
 

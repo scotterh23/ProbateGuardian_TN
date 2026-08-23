@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSession } from "@/lib/auth";
+import { publicAppOrigin } from "@/lib/origin";
 
 const schema = z.object({
   estateId: z.string().min(1),
@@ -32,9 +33,11 @@ export async function POST(req: Request) {
     },
   });
 
-  const origin = process.env.AUTH_URL || new URL(req.url).origin;
+  const origin = publicAppOrigin(req);
+  const invitePath = `/invite/${token}`;
   return NextResponse.json({
     inviteId: invite.id,
-    inviteUrl: `${origin}/invite/${token}`,
+    invitePath,
+    inviteUrl: `${origin}${invitePath}`,
   });
 }
