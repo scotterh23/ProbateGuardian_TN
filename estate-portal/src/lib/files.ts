@@ -7,7 +7,7 @@ const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 const BLOB_PREFIX = "estate-portal/";
 
-function useBlob() {
+function blobEnabled() {
   return Boolean(
     process.env.BLOB_READ_WRITE_TOKEN ||
       (process.env.VERCEL === "1" && process.env.BLOB_STORE_ID),
@@ -30,7 +30,7 @@ export async function saveUpload(file: File) {
   const mime = file.type || "application/octet-stream";
   const fileName = file.name || stored;
 
-  if (useBlob()) {
+  if (blobEnabled()) {
     const pathname = `${BLOB_PREFIX}${stored}`;
     const blob = await put(pathname, buf, {
       access: "private",
@@ -51,7 +51,7 @@ export async function saveUpload(file: File) {
 }
 
 export async function readUpload(storedName: string) {
-  if (useBlob() || storedName.includes("/") || storedName.startsWith("http")) {
+  if (blobEnabled() || storedName.includes("/") || storedName.startsWith("http")) {
     const result = await get(storedName, { access: "private" });
     if (!result?.stream) {
       throw new Error("File not found in blob storage.");
