@@ -82,6 +82,26 @@ npm run db:seed              # load demo users/estate (destructive)
 
 `npm run build` already runs `prisma generate` and `prisma migrate deploy`.
 
+## First production admin (safe, one-time)
+
+Do **not** run `db:seed` against production — it wipes all tables.
+
+From your laptop, with Neon **direct** URLs in the command (not committed to git):
+
+```bash
+cd estate-portal
+npx prisma generate
+
+DIRECT_URL="postgresql://…unpooled…?sslmode=require" \
+DATABASE_URL="postgresql://…unpooled…?sslmode=require" \
+ADMIN_EMAIL="you@probateguardians.com" \
+ADMIN_PASSWORD="choose-a-long-password" \
+ADMIN_NAME="Scott Hardesty" \
+npm run db:create-admin
+```
+
+That script only inserts an admin. If an admin already exists, it exits unless you set `FORCE_ADMIN=true`.
+
 ## Create a real estate (admin)
 
 1. Sign in as admin.
