@@ -23,12 +23,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Those credentials do not match our records." }, { status: 401 });
   }
 
-  await createSession({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
-  });
-
-  return NextResponse.json({ ok: true });
+  const res = NextResponse.json({ ok: true });
+  await createSession(
+    {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    },
+    res,
+  );
+  return res;
 }

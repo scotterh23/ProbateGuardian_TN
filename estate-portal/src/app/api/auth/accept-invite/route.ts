@@ -30,7 +30,11 @@ export async function POST(req: Request) {
     const saved = existing
       ? await tx.user.update({
           where: { id: existing.id },
-          data: { name: parsed.data.name, passwordHash, role: invite.role },
+          data: {
+            name: parsed.data.name,
+            passwordHash,
+            role: existing.role === "ADMIN" ? "ADMIN" : invite.role,
+          },
         })
       : await tx.user.create({
           data: {
@@ -55,12 +59,20 @@ export async function POST(req: Request) {
     return saved;
   });
 
-  await createSession({
-    id: user.id,
-    email: user.email,
-    name: user.name,
-    role: user.role,
+  const redirectTo = `/estates/${invite.estateId}`;
+  const res = NextResponse.json({
+    ok: true,
+    estateId: invite.estateId,
+    redirectTo,
   });
-
-  return NextResponse.json({ ok: true });
+  await createSession(
+    {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    },
+    res,
+  );
+  return res;
 }

@@ -13,6 +13,7 @@ async function main() {
 
   const passwordHash = await bcrypt.hash("demo1234", 10);
 
+  await prisma.estateQuestion.deleteMany();
   await prisma.updateComment.deleteMany();
   await prisma.estateUpdate.deleteMany();
   await prisma.document.deleteMany();
@@ -73,7 +74,7 @@ async function main() {
     ],
   });
 
-  const update1 = await prisma.estateUpdate.create({
+  await prisma.estateUpdate.create({
     data: {
       estateId: estate.id,
       authorId: admin.id,
@@ -81,11 +82,11 @@ async function main() {
     },
   });
 
-  await prisma.updateComment.create({
+  await prisma.estateQuestion.create({
     data: {
-      updateId: update1.id,
+      estateId: estate.id,
       authorId: heir.id,
-      body: "Thank you — I live in Ohio and couldn’t get down this month. Grateful someone local walked it.",
+      body: "I live in Ohio and couldn’t get down this month. Can you confirm the locks were actually changed?",
     },
   });
 

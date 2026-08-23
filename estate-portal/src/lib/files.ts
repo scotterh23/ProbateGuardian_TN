@@ -3,6 +3,16 @@ import path from "path";
 import { randomUUID } from "crypto";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
+
+export function getUploadedFile(form: FormData, key = "file"): File | null {
+  const value = form.get(key);
+  if (!value || typeof value === "string") return null;
+  const file = value as File;
+  if (typeof file.arrayBuffer !== "function") return null;
+  if (!Number(file.size)) return null;
+  return file;
+}
 
 export async function saveUpload(file: File) {
   await mkdir(UPLOAD_DIR, { recursive: true });

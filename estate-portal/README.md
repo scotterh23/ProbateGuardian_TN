@@ -11,7 +11,8 @@ Live intent: `portal.probateguardians.com`.
 - Email + password login with role-based access
 - Admin-created invite links (executor, heir, attorney)
 - Estate dashboard with status and last update
-- Estate workspace: timeline, activity feed, comments, document vault
+- Estate workspace: timeline, activity feed, document vault
+- Heirs send private questions to the Probate Guardians team (not visible to other heirs)
 - Admin: create estates, invite users, edit status
 
 **Not in Phase 1:** notifications, vendor marketplace, CRM sync, payments.
@@ -21,9 +22,9 @@ Live intent: `portal.probateguardians.com`.
 | Role | Access |
 |------|--------|
 | **Executor / Administrator** | Full estate view, post updates, upload documents |
-| **Heir / family** | View-only + comments on updates |
-| **Attorney / paralegal** | All invited estates, post notes, view documents |
-| **Probate Guardians admin** | Create estates, invite users, manage everything |
+| **Heir** | View updates and documents; send questions to Probate Guardians only |
+| **Attorney / paralegal** | Invited estates, post notes, view and upload documents |
+| **Probate Guardians admin** | Create estates, invite users, manage everything, see heir questions |
 
 ## Environment
 
@@ -107,7 +108,7 @@ That script only inserts an admin. If an admin already exists, it exits unless y
 1. Sign in as admin.
 2. **Admin → Create estate**.
 3. Open the estate → **Invite someone** → copy the invite link.
-4. They set a password at `/invite/[token]`.
+4. They set a password at `/invite/[token]` and land directly on that estate.
 
 ## Vercel + Neon
 
@@ -124,7 +125,8 @@ Uploads still use the local disk in Phase 1 (`uploads/`). On Vercel that is ephe
 
 - Sessions are httpOnly JWTs (30 days).
 - Documents are only served after membership checks.
-- Heirs cannot post official updates or upload vault files.
+- Heirs cannot post official updates, public comments, or upload vault files.
+- Heir questions are visible only to the Probate Guardians team (and the heir who asked).
 - Invite links expire in 14 days.
 - Seed refuses to run unless `ALLOW_SEED=true`.
 

@@ -40,6 +40,7 @@ export function PostUpdateForm({ estateId }: { estateId: string }) {
     setError("");
     const res = await fetch(`/api/estates/${estateId}/updates`, {
       method: "POST",
+      credentials: "same-origin",
       body: new FormData(e.currentTarget),
     });
     const data = await res.json().catch(() => ({}));
@@ -77,38 +78,55 @@ export function PostUpdateForm({ estateId }: { estateId: string }) {
 export function CommentForm({ updateId }: { updateId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPending(true);
+    setError("");
     const form = e.currentTarget;
     const body = String(new FormData(form).get("body") || "");
-    await fetch(`/api/updates/${updateId}/comments`, {
+    const res = await fetch(`/api/updates/${updateId}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({ body }),
     });
+    const data = await res.json().catch(() => ({}));
     setPending(false);
+    if (!res.ok) {
+      setError(data.error || "Could not post this note.");
+      return;
+    }
     form.reset();
     router.refresh();
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-3 flex gap-2">
-      <input
-        name="body"
-        required
-        placeholder="Add a comment"
-        className="flex-1 rounded-xl border border-line px-3 py-2 text-sm"
-      />
-      <button className="rounded-xl border border-line px-3 py-2 text-sm font-semibold" disabled={pending}>
-        Reply
-      </button>
+    <form onSubmit={onSubmit} className="mt-3 flex flex-col gap-2">
+      <div className="flex gap-2">
+        <input
+          name="body"
+          required
+          placeholder="Add a note for the family"
+          className="flex-1 rounded-xl border border-line px-3 py-2 text-sm"
+        />
+        <button className="rounded-xl border border-line px-3 py-2 text-sm font-semibold" disabled={pending}>
+          Reply
+        </button>
+      </div>
+      {error && <p className="text-sm text-red-700">{error}</p>}
     </form>
   );
 }
 
-export function UpdatesList({ updates }: { updates: Update[] }) {
+export function UpdatesList({
+  updates,
+  canReply,
+}: {
+  updates: Update[];
+  canReply: boolean;
+}) {
   if (updates.length === 0) {
     return <p className="text-muted">No updates yet. The first note will appear here.</p>;
   }
@@ -137,7 +155,7 @@ export function UpdatesList({ updates }: { updates: Update[] }) {
               ))}
             </ul>
           )}
-          <CommentForm updateId={update.id} />
+          {canReply && <CommentForm updateId={update.id} />}
         </li>
       ))}
     </ol>
@@ -147,22 +165,31 @@ export function UpdatesList({ updates }: { updates: Update[] }) {
 export function DocumentUpload({ estateId }: { estateId: string }) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setPending(true);
-    await fetch(`/api/estates/${estateId}/documents`, {
+    setError("");
+    const form = e.currentTarget;
+    const res = await fetch(`/api/estates/${estateId}/documents`, {
       method: "POST",
-      body: new FormData(e.currentTarget),
+      credentials: "same-origin",
+      body: new FormData(form),
     });
+    const data = await res.json().catch(() => ({}));
     setPending(false);
-    (e.target as HTMLFormElement).reset();
+    if (!res.ok) {
+      setError(data.error || "Could not upload that file.");
+      return;
+    }
+    form.reset();
     router.refresh();
   }
 
   return (
-    <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
-      <label className="flex-1 text-sm">
+    <form onSubmit={onSubmit} className="mt-4 flex flex-col gap-3">
+      <label className="text-sm">
         Category
         <select name="category" className="mt-1 w-full rounded-xl border border-line px-3 py-2">
           {Object.entries(DOC_LABEL).map(([value, label]) => (
@@ -172,10 +199,13 @@ export function DocumentUpload({ estateId }: { estateId: string }) {
           ))}
         </select>
       </label>
-      <input name="file" type="file" required className="flex-1 text-sm" />
-      <button className="rounded-xl bg-forest px-4 py-2.5 font-semibold text-white" disabled={pending}>
-        {pending ? "Uploading…" : "Upload"}
-      </button>
+      <input name="file" type="file" required className="w-full text-sm" />
+      <div>
+        <button className="rounded-xl bg-forest px-4 py-2.5 font-semibold text-white" disabled={pending}>
+          {pending ? "Uploading…" : "Upload"}
+        </button>
+      </div>
+      {error && <p className="text-sm text-red-700">{error}</p>}
     </form>
   );
 }
@@ -248,6 +278,7 @@ export function InviteForm({ estateId }: { estateId: string }) {
     const res = await fetch("/api/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({
         estateId,
         email: form.get("email"),
@@ -266,8 +297,8 @@ export function InviteForm({ estateId }: { estateId: string }) {
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <p className="text-sm text-muted">
-        Phase 1 sends a copyable invite link (email delivery can be added later). Share it with the
-        executor, heir, or attorney.
+        Phase 1 sends a copyable invite link (email delivery can be added later). Choose Executor,
+        Heir, or Attorney.
       </p>
       <input
         name="email"
@@ -278,7 +309,7 @@ export function InviteForm({ estateId }: { estateId: string }) {
       />
       <select name="role" className="w-full rounded-xl border border-line px-3 py-2">
         <option value="EXECUTOR">Executor / Administrator</option>
-        <option value="HEIR">Heir / family member</option>
+        <option value="HEIR">Heir</option>
         <option value="ATTORNEY">Attorney / paralegal</option>
       </select>
       {error && <p className="text-sm text-red-700">{error}</p>}
@@ -289,5 +320,81 @@ export function InviteForm({ estateId }: { estateId: string }) {
         </p>
       )}
     </form>
+  );
+}
+
+type Question = {
+  id: string;
+  body: string;
+  createdAt: string;
+  author: { name: string };
+};
+
+export function QuestionForm({ estateId }: { estateId: string }) {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPending(true);
+    setError("");
+    const form = e.currentTarget;
+    const body = String(new FormData(form).get("body") || "");
+    const res = await fetch(`/api/estates/${estateId}/questions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ body }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setPending(false);
+    if (!res.ok) {
+      setError(data.error || "Could not send that question.");
+      return;
+    }
+    form.reset();
+    router.refresh();
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-3">
+      <textarea
+        name="body"
+        required
+        minLength={4}
+        rows={4}
+        placeholder="Ask Probate Guardians a question about the house, timeline, or next steps."
+        className="w-full rounded-xl border border-line px-3 py-3"
+      />
+      {error && <p className="text-sm text-red-700">{error}</p>}
+      <button className="rounded-xl bg-forest px-4 py-2.5 font-semibold text-white" disabled={pending}>
+        {pending ? "Sending…" : "Send to Probate Guardians"}
+      </button>
+    </form>
+  );
+}
+
+export function QuestionList({
+  questions,
+  empty,
+}: {
+  questions: Question[];
+  empty: string;
+}) {
+  if (questions.length === 0) {
+    return <p className="mt-3 text-sm text-muted">{empty}</p>;
+  }
+  return (
+    <ul className="mt-4 space-y-3">
+      {questions.map((q) => (
+        <li key={q.id} className="rounded-xl bg-mist p-3 text-sm">
+          <p className="text-muted">
+            {q.author.name} · {new Date(q.createdAt).toLocaleString()}
+          </p>
+          <p className="mt-1 whitespace-pre-wrap text-forest">{q.body}</p>
+        </li>
+      ))}
+    </ul>
   );
 }

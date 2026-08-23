@@ -44,6 +44,7 @@ model User {
   updates     EstateUpdate[]
   comments    UpdateComment[]
   documents   Document[]
+  questions   EstateQuestion[]
   invitesSent Invite[]       @relation("InvitedBy")
 }
 
@@ -60,6 +61,7 @@ model Estate {
   members   EstateMember[]
   updates   EstateUpdate[]
   documents Document[]
+  questions EstateQuestion[]
   invites   Invite[]
 }
 
@@ -100,6 +102,19 @@ model UpdateComment {
 
   update EstateUpdate @relation(fields: [updateId], references: [id], onDelete: Cascade)
   author User         @relation(fields: [authorId], references: [id], onDelete: Cascade)
+}
+
+model EstateQuestion {
+  id        String   @id @default(cuid())
+  estateId  String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+
+  estate Estate @relation(fields: [estateId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([estateId, createdAt])
 }
 
 model Document {

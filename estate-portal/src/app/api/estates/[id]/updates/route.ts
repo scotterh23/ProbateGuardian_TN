@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { canPostUpdate, getEstateAccess, getSession } from "@/lib/auth";
-import { saveUpload } from "@/lib/files";
+import { getUploadedFile, MAX_UPLOAD_BYTES, saveUpload } from "@/lib/files";
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
@@ -12,16 +12,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "You can view this estate, but posting updates is limited to the executor, attorney, and Probate Guardians." }, { status: 403 });
   }
 
-  const form = await req.formData();
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "Could not read the upload. Try a smaller file." }, { status: 400 });
+  }
   const body = String(form.get("body") || "").trim();
   if (body.length < 2) {
     return NextResponse.json({ error: "Please write a short update." }, { status: 400 });
   }
 
-  const file = form.get("file");
+  const file = getUploadedFile(form);
   let fileMeta: { fileName?: string; filePath?: string; fileMime?: string } = {};
-  if (file instanceof File && file.size > 0) {
-    if (file.size > 12 * 1024 * 1024) {
+  if (file) {
+    if (file.size > MAX_UPLOAD_BYTES) {
       return NextResponse.json({ error: "Files must be 12MB or smaller." }, { status: 400 });
     }
     const saved = await saveUpload(file);

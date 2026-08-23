@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
+import { NextResponse } from "next/server";
 import { UserRole } from "@prisma/client";
 import { prisma } from "./db";
 
@@ -20,7 +21,14 @@ function secret() {
   return new TextEncoder().encode(value);
 }
 
-export async function createSession(user: SessionUser) {
+const COOKIE_OPTIONS = {
+  httpOnly: true,
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 60 * 60 * 24 * 30,
+};
+
+export async function createSession(user: SessionUser, response?: NextResponse) {
   const token = await new SignJWT({
     id: user.id,
     email: user.email,
@@ -33,14 +41,18 @@ export async function createSession(user: SessionUser) {
     .setExpirationTime("30d")
     .sign(secret());
 
-  const store = await cookies();
-  store.set(COOKIE, token, {
-    httpOnly: true,
-    sameSite: "lax",
+  const options = {
+    ...COOKIE_OPTIONS,
     secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  };
+
+  if (response) {
+    response.cookies.set(COOKIE, token, options);
+    return;
+  }
+
+  const store = await cookies();
+  store.set(COOKIE, token, options);
 }
 
 export async function clearSession() {
@@ -83,6 +95,8 @@ export async function userCanAccessEstate(user: SessionUser, estateId: string) {
 }
 
 export async function getEstateAccess(user: SessionUser, estateId: string) {
+  const estate = await prisma.estate.findUnique({ where: { id: estateId }, select: { id: true } });
+  if (!estate) return { allowed: false as const, role: null };
   if (user.role === "ADMIN") {
     return { allowed: true as const, role: "ADMIN" as UserRole };
   }
@@ -106,5 +120,13 @@ export function canManageEstate(role: UserRole) {
 }
 
 export function canComment(role: UserRole) {
-  return Boolean(role);
+  return role === "ADMIN" || role === "EXECUTOR" || role === "ATTORNEY";
+}
+
+export function canAskQuestion(role: UserRole) {
+  return role === "HEIR";
+}
+
+export function canViewAllQuestions(role: UserRole) {
+  return role === "ADMIN";
 }

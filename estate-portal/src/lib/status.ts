@@ -19,7 +19,7 @@ export const STATUS_LABEL: Record<EstateStatus, string> = {
 export const ROLE_LABEL: Record<UserRole, string> = {
   ADMIN: "Probate Guardians",
   EXECUTOR: "Executor",
-  HEIR: "Family member",
+  HEIR: "Heir",
   ATTORNEY: "Attorney",
 };
 

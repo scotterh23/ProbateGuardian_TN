@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { canUploadDocs, getEstateAccess, getSession } from "@/lib/auth";
-import { saveUpload } from "@/lib/files";
+import { getUploadedFile, MAX_UPLOAD_BYTES, saveUpload } from "@/lib/files";
 
 const CATEGORIES = ["WILL", "LETTERS", "APPRAISAL", "PHOTOS", "CONTRACTS", "OTHER"] as const;
 
@@ -14,17 +14,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Uploading is limited to the executor, attorney, and Probate Guardians." }, { status: 403 });
   }
 
-  const form = await req.formData();
-  const file = form.get("file");
+  let form: FormData;
+  try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: "Could not read the upload. Try a smaller file." }, { status: 400 });
+  }
+  const file = getUploadedFile(form);
   const categoryRaw = String(form.get("category") || "OTHER");
   const category = CATEGORIES.includes(categoryRaw as (typeof CATEGORIES)[number])
     ? categoryRaw
     : "OTHER";
 
-  if (!(file instanceof File) || file.size === 0) {
+  if (!file) {
     return NextResponse.json({ error: "Choose a file to upload." }, { status: 400 });
   }
-  if (file.size > 12 * 1024 * 1024) {
+  if (file.size > MAX_UPLOAD_BYTES) {
     return NextResponse.json({ error: "Files must be 12MB or smaller." }, { status: 400 });
   }
 

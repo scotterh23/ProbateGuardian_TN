@@ -1,5 +1,14 @@
 import { notFound, redirect } from "next/navigation";
-import { canManageEstate, canPostUpdate, canUploadDocs, getEstateAccess, getSession } from "@/lib/auth";
+import {
+  canAskQuestion,
+  canComment,
+  canManageEstate,
+  canPostUpdate,
+  canUploadDocs,
+  canViewAllQuestions,
+  getEstateAccess,
+  getSession,
+} from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -10,6 +19,8 @@ import {
   DocumentUpload,
   InviteForm,
   PostUpdateForm,
+  QuestionForm,
+  QuestionList,
   StatusEditor,
   UpdatesList,
 } from "./EstateClient";
@@ -39,12 +50,28 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
         orderBy: { createdAt: "desc" },
         include: { uploadedBy: { select: { name: true } } },
       },
+      questions: {
+        orderBy: { createdAt: "desc" },
+        include: { author: { select: { id: true, name: true, role: true } } },
+      },
     },
   });
   if (!estate) notFound();
 
   const role = access.role;
   const attorneyView = role === "ATTORNEY";
+  const questions = canViewAllQuestions(role)
+    ? estate.questions
+    : canAskQuestion(role)
+      ? estate.questions.filter((q) => q.authorId === session.id)
+      : [];
+  const visibleUpdates = estate.updates.map((u) => ({
+    ...u,
+    createdAt: u.createdAt.toISOString(),
+    comments: u.comments
+      .filter((c) => role !== "HEIR" || c.author.role !== "HEIR")
+      .map((c) => ({ ...c, createdAt: c.createdAt.toISOString() })),
+  }));
 
   return (
     <Shell user={session}>
@@ -83,17 +110,11 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
           )}
           {role === "HEIR" && (
             <p className="mb-4 text-sm text-muted">
-              You can read every update and leave a comment. Posting official notes is reserved for
-              the executor, attorney, and Probate Guardians.
+              You can read every update and document. Questions for Probate Guardians stay with the
+              team — they are not posted for other family members to see.
             </p>
           )}
-          <UpdatesList
-            updates={estate.updates.map((u) => ({
-              ...u,
-              createdAt: u.createdAt.toISOString(),
-              comments: u.comments.map((c) => ({ ...c, createdAt: c.createdAt.toISOString() })),
-            }))}
-          />
+          <UpdatesList updates={visibleUpdates} canReply={canComment(role)} />
         </section>
 
         <div className="space-y-6">
@@ -114,6 +135,37 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
               </div>
             )}
           </section>
+
+          {(canAskQuestion(role) || canViewAllQuestions(role)) && (
+            <section className="card p-5">
+              <h2 className="font-serif text-xl">
+                {canViewAllQuestions(role) ? "Family questions" : "Ask Probate Guardians"}
+              </h2>
+              <p className="mt-1 text-sm text-muted">
+                {canViewAllQuestions(role)
+                  ? "Heirs can send questions here. Other family members do not see them."
+                  : "Only the Probate Guardians team can see what you send. Other heirs cannot."}
+              </p>
+              {canAskQuestion(role) && (
+                <div className="mt-4">
+                  <QuestionForm estateId={estate.id} />
+                </div>
+              )}
+              <QuestionList
+                questions={questions.map((q) => ({
+                  id: q.id,
+                  body: q.body,
+                  createdAt: q.createdAt.toISOString(),
+                  author: { name: q.author.name },
+                }))}
+                empty={
+                  canViewAllQuestions(role)
+                    ? "No questions yet."
+                    : "Your questions to the team will appear here."
+                }
+              />
+            </section>
+          )}
 
           <section className="card p-5">
             <h2 className="font-serif text-xl">Document vault</h2>
