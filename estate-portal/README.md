@@ -2,7 +2,9 @@
 
 A focused MVP so executors, heirs, and probate attorneys can stay aligned during the sale of an inherited home in Middle Tennessee.
 
-Live intent: `portal.probateguardians.com` (or `app.probateguardians.com`).
+Live intent: `portal.probateguardians.com`.
+
+**Database:** PostgreSQL (Neon in production). Prisma reads `DATABASE_URL` and `DIRECT_URL`.
 
 ## What Phase 1 includes
 
@@ -10,7 +12,7 @@ Live intent: `portal.probateguardians.com` (or `app.probateguardians.com`).
 - Admin-created invite links (executor, heir, attorney)
 - Estate dashboard with status and last update
 - Estate workspace: timeline, activity feed, comments, document vault
-- Admin: create estates, edit status, invite people
+- Admin: create estates, invite users, edit status
 
 **Not in Phase 1:** notifications, vendor marketplace, CRM sync, payments.
 
@@ -23,22 +25,44 @@ Live intent: `portal.probateguardians.com` (or `app.probateguardians.com`).
 | **Attorney / paralegal** | All invited estates, post notes, view documents |
 | **Probate Guardians admin** | Create estates, invite users, manage everything |
 
+## Environment
+
+```
+DATABASE_URL="postgresql://USER:PASSWORD@HOST/dbname?sslmode=require"
+DIRECT_URL="postgresql://USER:PASSWORD@HOST/dbname?sslmode=require"
+AUTH_SECRET="long-random-string-at-least-16-chars"
+AUTH_URL="http://localhost:3000"
+```
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | App queries. On Neon, use the **pooled** connection (`-pooler` host). |
+| `DIRECT_URL` | Migrations. On Neon, use the **unpooled** / direct connection. If you only have one URL, set both to the same **direct** string. |
+| `AUTH_SECRET` | JWT cookie signing |
+| `AUTH_URL` | Public site URL (invite links) |
+
+SQLite is no longer used. Local `.env` must be a Postgres URL (Neon branch or local Postgres).
+
 ## Local setup
 
-Requires Node 20+.
+Requires Node 20+ and a Postgres database (Neon is fine for local too).
 
 ```bash
 cd estate-portal
 cp .env.example .env
+# Put your Neon URLs in .env (pooled → DATABASE_URL, direct → DIRECT_URL)
 npm install
 npx prisma generate
-npm run db:reset
+npx prisma migrate deploy
+npm run db:seed
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
 ### Demo logins (password `demo1234`)
+
+Only after `npm run db:seed` (wipes data — never run on production without intending to).
 
 | Role | Email |
 |------|--------|
@@ -47,44 +71,43 @@ Open [http://localhost:3000](http://localhost:3000).
 | Heir | `heir@example.com` |
 | Attorney | `attorney@example.com` |
 
-The seed creates the **Whitfield family home** at 4521 Main St, Lebanon (Wilson County) with two updates and a family comment.
+## Database commands
+
+```bash
+npx prisma migrate deploy    # apply migrations (production + first local setup)
+npx prisma migrate dev       # create a new migration while developing
+npx prisma db push           # push schema without migration files (prototyping only)
+npm run db:seed              # load demo users/estate (destructive)
+```
+
+`npm run build` already runs `prisma generate` and `prisma migrate deploy`.
 
 ## Create a real estate (admin)
 
 1. Sign in as admin.
 2. **Admin → Create estate**.
-3. Open the estate → **Invite someone** → copy the invite link and send it (email delivery comes later).
-4. They set a password at `/invite/[token]` and land on the dashboard.
+3. Open the estate → **Invite someone** → copy the invite link.
+4. They set a password at `/invite/[token]`.
 
-## Environment
+## Vercel + Neon
 
-```
-DATABASE_URL="file:./dev.db"
-AUTH_SECRET="long-random-string-at-least-16-chars"
-AUTH_URL="http://localhost:3000"
-```
+See the deploy checklist in the project notes after this change. In short:
 
-For production Postgres, change `DATABASE_URL` to a Postgres URL and set `provider = "postgresql"` in `prisma/schema.prisma`, then `npx prisma db push`.
+1. Root Directory: `estate-portal`
+2. Env: `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `AUTH_URL`
+3. Redeploy so `prisma migrate deploy` runs during build
+4. Do **not** seed production unless you want the demo accounts
 
-## Deploy (Vercel)
-
-1. Create a Vercel project with **Root Directory** `estate-portal`.
-2. Set `AUTH_SECRET`, `AUTH_URL` (`https://portal.probateguardians.com`), and `DATABASE_URL`.
-3. For SQLite on Vercel, use Postgres (Neon/Supabase) instead — serverless filesystems are ephemeral.
-4. Add a persistent disk or S3 later for `uploads/`. Phase 1 stores files on local disk.
-5. Point the subdomain in DNS (CNAME to Vercel) and add it in Vercel → Domains.
-
-Build command: `npm run build`  
-Install: `npm install`  
-Output: Next.js default.
+Uploads still use the local disk in Phase 1 (`uploads/`). On Vercel that is ephemeral — S3 comes later.
 
 ## Security notes
 
 - Sessions are httpOnly JWTs (30 days).
-- Documents and update attachments are only served after membership checks.
+- Documents are only served after membership checks.
 - Heirs cannot post official updates or upload vault files.
 - Invite links expire in 14 days.
+- Seed refuses to run unless `ALLOW_SEED=true`.
 
 ## Stack
 
-Next.js 15 (App Router) · Tailwind CSS · Prisma · SQLite (dev) · jose + bcryptjs
+Next.js 15 (App Router) · Tailwind CSS · Prisma · PostgreSQL (Neon) · jose + bcryptjs

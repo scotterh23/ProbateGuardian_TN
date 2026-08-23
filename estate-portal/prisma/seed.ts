@@ -4,6 +4,13 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.ALLOW_SEED !== "true") {
+    console.error(
+      "Refusing to seed. Set ALLOW_SEED=true if you really want to wipe and reload demo data."
+    );
+    process.exit(1);
+  }
+
   const passwordHash = await bcrypt.hash("demo1234", 10);
 
   await prisma.updateComment.deleteMany();
