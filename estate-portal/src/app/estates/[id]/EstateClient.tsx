@@ -267,21 +267,25 @@ export function StatusEditor({
 }
 
 export function InviteForm({ estateId }: { estateId: string }) {
-  const [url, setUrl] = useState("");
+  const [created, setCreated] = useState<{ url: string; email: string; token: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [emailNote, setEmailNote] = useState("");
   const [error, setError] = useState("");
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError("");
-    setUrl("");
+    setCopied(false);
+    setEmailNote("");
     const form = new FormData(e.currentTarget);
+    const email = String(form.get("email") || "");
     const res = await fetch("/api/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
       body: JSON.stringify({
         estateId,
-        email: form.get("email"),
+        email,
         role: form.get("role"),
       }),
     });
@@ -290,17 +294,42 @@ export function InviteForm({ estateId }: { estateId: string }) {
       setError(data.error || "Could not create invite.");
       return;
     }
-    const path = data.invitePath || `/invite/${String(data.inviteUrl || "").split("/").pop() || ""}`;
-    const origin = typeof window !== "undefined" ? window.location.origin : "";
-    setUrl(`${origin}${path.startsWith("/") ? path : `/${path}`}`);
+    const token = String(data.invitePath || data.inviteUrl || "").split("/").pop() || "";
+    const path = data.invitePath || `/invite/${token}`;
+    const origin = window.location.origin;
+    setCreated({
+      url: `${origin}${path.startsWith("/") ? path : `/${path}`}`,
+      email,
+      token,
+    });
     (e.target as HTMLFormElement).reset();
+  }
+
+  async function copyLink() {
+    if (!created) return;
+    try {
+      await navigator.clipboard.writeText(created.url);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  async function sendEmail() {
+    if (!created?.token) return;
+    const res = await fetch(`/api/invites/${created.token}/send-email`, {
+      method: "POST",
+      credentials: "same-origin",
+    });
+    const data = await res.json().catch(() => ({}));
+    setEmailNote(data.message || "Copy the invite link and send it directly for now.");
   }
 
   return (
     <form onSubmit={onSubmit} className="space-y-3">
       <p className="text-sm text-muted">
-        Phase 1 sends a copyable invite link (email delivery can be added later). Choose Executor,
-        Heir, or Attorney.
+        Create a link for an Executor, Heir, or Attorney. They set a password and land in this
+        estate.
       </p>
       <input
         name="email"
@@ -316,10 +345,24 @@ export function InviteForm({ estateId }: { estateId: string }) {
       </select>
       {error && <p className="text-sm text-red-700">{error}</p>}
       <button className="rounded-xl bg-forest px-4 py-2.5 font-semibold text-white">Create invite link</button>
-      {url && (
-        <p className="break-all rounded-xl bg-mist p-3 text-sm">
-          Invite link: {url}
-        </p>
+      {created && (
+        <div className="space-y-2 rounded-xl bg-mist p-3 text-sm">
+          <p className="font-semibold text-forest">Invite ready for {created.email}</p>
+          <input
+            readOnly
+            value={created.url}
+            className="w-full rounded-lg border border-line bg-white px-2 py-2 text-xs"
+          />
+          <div className="flex flex-wrap gap-2">
+            <button type="button" className="rounded-xl bg-forest px-3 py-2 font-semibold text-white" onClick={copyLink}>
+              {copied ? "Copied" : "Copy link"}
+            </button>
+            <button type="button" className="rounded-xl border border-line px-3 py-2 font-semibold" onClick={sendEmail}>
+              Send email
+            </button>
+          </div>
+          {emailNote && <p className="text-muted">{emailNote}</p>}
+        </div>
       )}
     </form>
   );

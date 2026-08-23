@@ -30,7 +30,8 @@ function fail(req: Request, token: string | undefined, message: string, wantsJso
     return NextResponse.json({ error: message }, { status: 400 });
   }
   const origin = publicAppOrigin(req);
-  const url = new URL(token ? `/invite/${token}` : "/login", origin);
+  const path = token ? `/invite/${token}` : "/invite/missing";
+  const url = new URL(path, origin);
   url.searchParams.set("error", message);
   return NextResponse.redirect(url, 303);
 }
