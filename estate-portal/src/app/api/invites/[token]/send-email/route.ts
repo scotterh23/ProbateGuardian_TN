@@ -28,12 +28,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ token: 
     estateName: invite.estate.nickname,
   });
 
+  if (!result.sent) {
+    const message =
+      result.reason === "missing_api_key"
+        ? "Email is not configured. Add RESEND_API_KEY on Vercel, then try again."
+        : `Could not send email (${result.reason || "unknown error"}). Copy the link and send it directly.`;
+    return NextResponse.json({ sent: false, reason: result.reason, to: invite.email, inviteUrl, message }, { status: 500 });
+  }
+
   return NextResponse.json({
-    sent: result.sent,
-    reason: result.reason,
+    sent: true,
     to: invite.email,
     inviteUrl,
-    message:
-      "Email sending from the portal is not connected yet. Copy the invite link and send it directly.",
+    message: `Invite email sent to ${invite.email}.`,
   });
 }

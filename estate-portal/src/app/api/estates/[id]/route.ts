@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getEstateAccess, getSession } from "@/lib/auth";
+import { removeUpload } from "@/lib/files";
 
 const patchSchema = z.object({
   nickname: z.string().min(2).optional(),
@@ -54,4 +55,28 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
   const estate = await prisma.estate.update({ where: { id }, data: parsed.data });
   return NextResponse.json({ estate });
+}
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const session = await getSession();
+  if (!session || session.role !== "ADMIN") {
+    return NextResponse.json({ error: "Admin only." }, { status: 403 });
+  }
+  const { id } = await params;
+  const body = await req.json().catch(() => ({}));
+  const estate = await prisma.estate.findUnique({
+    where: { id },
+    include: { documents: { select: { filePath: true } } },
+  });
+  if (!estate) return NextResponse.json({ error: "Not found." }, { status: 404 });
+  const confirm = String(body.confirm || "").trim();
+  if (confirm !== estate.nickname) {
+    return NextResponse.json(
+      { error: `Type the estate name “${estate.nickname}” to confirm deletion.` },
+      { status: 400 },
+    );
+  }
+  await Promise.all(estate.documents.map((doc) => removeUpload(doc.filePath)));
+  await prisma.estate.delete({ where: { id } });
+  return NextResponse.json({ ok: true });
 }

@@ -115,6 +115,10 @@ export function canUploadDocs(role: UserRole) {
   return role === "ADMIN" || role === "EXECUTOR" || role === "ATTORNEY";
 }
 
+export function canDeleteDocs(role: UserRole) {
+  return role === "ADMIN" || role === "EXECUTOR";
+}
+
 export function canManageEstate(role: UserRole) {
   return role === "ADMIN";
 }

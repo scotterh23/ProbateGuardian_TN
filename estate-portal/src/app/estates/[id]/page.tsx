@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import {
   canAskQuestion,
   canComment,
+  canDeleteDocs,
   canManageEstate,
   canPostUpdate,
   canUploadDocs,
@@ -15,6 +16,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Timeline } from "@/components/Timeline";
 import { ROLE_LABEL } from "@/lib/status";
 import {
+  DeleteEstateForm,
   DocumentList,
   DocumentUpload,
   InviteForm,
@@ -174,12 +176,22 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
             </p>
             {canUploadDocs(role) && <DocumentUpload estateId={estate.id} />}
             <DocumentList
+              canDelete={canDeleteDocs(role)}
               documents={estate.documents.map((d) => ({
                 ...d,
                 createdAt: d.createdAt.toISOString(),
               }))}
             />
           </section>
+
+          {canManageEstate(role) && (
+            <section className="card border-red-200 p-5">
+              <h2 className="font-serif text-xl text-red-900">Delete this estate</h2>
+              <div className="mt-4">
+                <DeleteEstateForm estateId={estate.id} nickname={estate.nickname} />
+              </div>
+            </section>
+          )}
         </div>
       </div>
     </Shell>

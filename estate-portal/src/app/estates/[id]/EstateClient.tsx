@@ -210,25 +210,65 @@ export function DocumentUpload({ estateId }: { estateId: string }) {
   );
 }
 
-export function DocumentList({ documents }: { documents: Doc[] }) {
+export function DocumentList({
+  documents,
+  canDelete,
+}: {
+  documents: Doc[];
+  canDelete?: boolean;
+}) {
+  const router = useRouter();
+  const [pendingId, setPendingId] = useState("");
+  const [error, setError] = useState("");
+
+  async function remove(doc: Doc) {
+    if (!confirm(`Delete “${doc.fileName}” from the vault? This cannot be undone.`)) return;
+    setError("");
+    setPendingId(doc.id);
+    const res = await fetch(`/api/documents/${doc.id}`, {
+      method: "DELETE",
+      credentials: "same-origin",
+    });
+    const data = await res.json().catch(() => ({}));
+    setPendingId("");
+    if (!res.ok) {
+      setError(data.error || "Could not delete that file.");
+      return;
+    }
+    router.refresh();
+  }
+
   if (documents.length === 0) {
     return <p className="mt-3 text-muted">The vault is empty.</p>;
   }
   return (
-    <ul className="mt-4 divide-y divide-line">
-      {documents.map((doc) => (
-        <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-          <div>
-            <a className="font-semibold text-forest underline-offset-2 hover:underline" href={`/api/documents/${doc.id}`}>
-              {doc.fileName}
-            </a>
-            <p className="text-sm text-muted">
-              {DOC_LABEL[doc.category] || doc.category} · {doc.uploadedBy.name}
-            </p>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <>
+      {error && <p className="mt-3 text-sm text-red-700">{error}</p>}
+      <ul className="mt-4 divide-y divide-line">
+        {documents.map((doc) => (
+          <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+            <div>
+              <a className="font-semibold text-forest underline-offset-2 hover:underline" href={`/api/documents/${doc.id}`}>
+                {doc.fileName}
+              </a>
+              <p className="text-sm text-muted">
+                {DOC_LABEL[doc.category] || doc.category} · {doc.uploadedBy.name}
+              </p>
+            </div>
+            {canDelete && (
+              <button
+                type="button"
+                className="text-sm font-semibold text-red-800 hover:underline disabled:opacity-60"
+                disabled={pendingId === doc.id}
+                onClick={() => remove(doc)}
+              >
+                {pendingId === doc.id ? "Deleting…" : "Delete"}
+              </button>
+            )}
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
@@ -317,12 +357,13 @@ export function InviteForm({ estateId }: { estateId: string }) {
 
   async function sendEmail() {
     if (!created?.token) return;
+    setEmailNote("Sending…");
     const res = await fetch(`/api/invites/${created.token}/send-email`, {
       method: "POST",
       credentials: "same-origin",
     });
     const data = await res.json().catch(() => ({}));
-    setEmailNote(data.message || "Copy the invite link and send it directly for now.");
+    setEmailNote(data.message || (res.ok ? `Email sent to ${created.email}.` : "Could not send email."));
   }
 
   return (
@@ -364,6 +405,66 @@ export function InviteForm({ estateId }: { estateId: string }) {
           {emailNote && <p className="text-muted">{emailNote}</p>}
         </div>
       )}
+    </form>
+  );
+}
+
+export function DeleteEstateForm({
+  estateId,
+  nickname,
+}: {
+  estateId: string;
+  nickname: string;
+}) {
+  const [confirmName, setConfirmName] = useState("");
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError("");
+    if (confirmName.trim() !== nickname) {
+      setError(`Type ${nickname} exactly to confirm.`);
+      return;
+    }
+    if (!confirm(`Permanently delete “${nickname}” and all of its documents, updates, and invites?`)) {
+      return;
+    }
+    setPending(true);
+    const res = await fetch(`/api/estates/${estateId}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ confirm: nickname }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setPending(false);
+    if (!res.ok) {
+      setError(data.error || "Could not delete this estate.");
+      return;
+    }
+    window.location.href = "/admin";
+  }
+
+  return (
+    <form onSubmit={onSubmit} className="space-y-3">
+      <p className="text-sm text-muted">
+        This removes the estate, vault files, activity, questions, and unused invites. Type{" "}
+        <span className="font-semibold text-forest">{nickname}</span> to confirm.
+      </p>
+      <input
+        value={confirmName}
+        onChange={(e) => setConfirmName(e.target.value)}
+        placeholder={nickname}
+        className="w-full rounded-xl border border-line px-3 py-2"
+      />
+      {error && <p className="text-sm text-red-700">{error}</p>}
+      <button
+        className="rounded-xl bg-red-800 px-4 py-2.5 font-semibold text-white disabled:opacity-60"
+        disabled={pending || confirmName.trim() !== nickname}
+      >
+        {pending ? "Deleting…" : "Delete estate"}
+      </button>
     </form>
   );
 }

@@ -13,7 +13,9 @@ Live intent: `portal.probateguardians.com`.
 - Estate dashboard with status and last update
 - Estate workspace: timeline, activity feed, document vault
 - Heirs send private questions to the Probate Guardians team (not visible to other heirs)
-- Admin: create estates, invite users, edit status
+- Admin: create/delete estates, invite users, edit status
+- Admin/executor: delete documents from the vault
+- Invite emails via Resend (`portal@probateguardians.com`)
 
 **Not in Phase 1:** notifications, vendor marketplace, CRM sync, payments.
 
@@ -21,10 +23,10 @@ Live intent: `portal.probateguardians.com`.
 
 | Role | Access |
 |------|--------|
-| **Executor / Administrator** | Full estate view, post updates, upload documents |
+| **Executor / Administrator** | Full estate view, post updates, upload and delete documents |
 | **Heir** | View updates and documents; send questions to Probate Guardians only |
 | **Attorney / paralegal** | Invited estates, post notes, view and upload documents |
-| **Probate Guardians admin** | Create estates, invite users, manage everything, see heir questions |
+| **Probate Guardians admin** | Create/delete estates, invite users, manage everything, see heir questions |
 
 ## Environment
 
@@ -43,6 +45,8 @@ AUTH_URL="http://localhost:3000"
 | `AUTH_URL` | Public site origin (invite links). Use `https://portal.probateguardians.com` in production, not `/login`. |
 | `BLOB_STORE_ID` | Set automatically when a Vercel Blob store is connected to the project |
 | `BLOB_READ_WRITE_TOKEN` | Optional static blob token (needed off Vercel; OIDC is used on Vercel) |
+| `RESEND_API_KEY` | Sends invite emails via Resend |
+| `INVITE_FROM_EMAIL` | Optional. Defaults to `Probate Guardians <portal@probateguardians.com>` |
 
 SQLite is no longer used. Local `.env` must be a Postgres URL (Neon branch or local Postgres).
 
@@ -120,6 +124,8 @@ See the deploy checklist in the project notes after this change. In short:
 2. Env: `DATABASE_URL`, `DIRECT_URL`, `AUTH_SECRET`, `AUTH_URL`
 3. Redeploy so `prisma migrate deploy` runs during build
 4. Do **not** seed production unless you want the demo accounts
+
+Invite email uses **Resend**. Add `RESEND_API_KEY` in Vercel, and verify `probateguardians.com` in the Resend dashboard so `portal@probateguardians.com` can send.
 
 Uploads use **Vercel Blob** in production (private store). Locally they still write to `uploads/` unless a blob token is present.
 

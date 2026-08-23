@@ -1,7 +1,7 @@
-import { mkdir, writeFile, readFile } from "fs/promises";
+import { mkdir, writeFile, readFile, unlink } from "fs/promises";
 import path from "path";
 import { randomUUID } from "crypto";
-import { get, put } from "@vercel/blob";
+import { del, get, put } from "@vercel/blob";
 
 const UPLOAD_DIR = path.join(process.cwd(), "uploads");
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
@@ -60,4 +60,21 @@ export async function readUpload(storedName: string) {
   }
   const full = path.join(UPLOAD_DIR, path.basename(storedName));
   return readFile(full);
+}
+
+export async function removeUpload(storedName: string) {
+  if (!storedName) return;
+  if (blobEnabled() || storedName.includes("/") || storedName.startsWith("http")) {
+    try {
+      await del(storedName);
+    } catch {
+      /* blob may already be gone */
+    }
+    return;
+  }
+  try {
+    await unlink(path.join(UPLOAD_DIR, path.basename(storedName)));
+  } catch {
+    /* local file may already be gone */
+  }
 }
