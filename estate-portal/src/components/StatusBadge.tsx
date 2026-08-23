@@ -2,7 +2,7 @@ import { EstateStatus } from "@prisma/client";
 import { STATUS_LABEL } from "@/lib/status";
 
 const TONE: Record<EstateStatus, string> = {
-  LETTERS: "bg-mist text-navy",
+  LETTERS: "bg-mist text-forest",
   VALUATION: "bg-accent-soft text-accent",
   LISTED: "bg-sky-50 text-sky-800",
   UNDER_CONTRACT: "bg-amber-50 text-amber-800",

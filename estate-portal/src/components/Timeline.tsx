@@ -11,12 +11,12 @@ export function Timeline({ status }: { status: EstateStatus }) {
           <li key={step} className="flex items-center gap-3 sm:block">
             <span
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-                done ? "bg-navy text-white" : "bg-mist text-muted"
+                done ? "bg-forest text-white" : "bg-mist text-muted"
               }`}
             >
               {i + 1}
             </span>
-            <span className={`text-sm ${done ? "text-navy" : "text-muted"}`}>
+            <span className={`text-sm ${done ? "text-forest" : "text-muted"}`}>
               {STATUS_LABEL[step]}
             </span>
             {i < STATUS_ORDER.length - 1 && (

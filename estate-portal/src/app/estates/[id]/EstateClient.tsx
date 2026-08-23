@@ -67,7 +67,7 @@ export function PostUpdateForm({ estateId }: { estateId: string }) {
       />
       <input name="file" type="file" className="block text-sm text-muted" />
       {error && <p className="text-sm text-red-700">{error}</p>}
-      <button className="rounded-xl bg-navy px-4 py-2.5 font-semibold text-white" disabled={pending}>
+      <button className="rounded-xl bg-forest px-4 py-2.5 font-semibold text-white" disabled={pending}>
         {pending ? "Posting…" : "Post update"}
       </button>
     </form>
@@ -120,7 +120,7 @@ export function UpdatesList({ updates }: { updates: Update[] }) {
             {update.author.name} · {ROLE_LABEL[update.author.role]} ·{" "}
             {new Date(update.createdAt).toLocaleString()}
           </p>
-          <p className="mt-2 whitespace-pre-wrap text-navy">{update.body}</p>
+          <p className="mt-2 whitespace-pre-wrap text-forest">{update.body}</p>
           {update.fileName && (
             <a className="mt-2 inline-block text-sm font-semibold text-accent" href={`/api/files/${update.id}`}>
               Attachment: {update.fileName}
@@ -173,7 +173,7 @@ export function DocumentUpload({ estateId }: { estateId: string }) {
         </select>
       </label>
       <input name="file" type="file" required className="flex-1 text-sm" />
-      <button className="rounded-xl bg-navy px-4 py-2.5 font-semibold text-white" disabled={pending}>
+      <button className="rounded-xl bg-forest px-4 py-2.5 font-semibold text-white" disabled={pending}>
         {pending ? "Uploading…" : "Upload"}
       </button>
     </form>
@@ -189,7 +189,7 @@ export function DocumentList({ documents }: { documents: Doc[] }) {
       {documents.map((doc) => (
         <li key={doc.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
           <div>
-            <a className="font-semibold text-navy underline-offset-2 hover:underline" href={`/api/documents/${doc.id}`}>
+            <a className="font-semibold text-forest underline-offset-2 hover:underline" href={`/api/documents/${doc.id}`}>
               {doc.fileName}
             </a>
             <p className="text-sm text-muted">
@@ -282,7 +282,7 @@ export function InviteForm({ estateId }: { estateId: string }) {
         <option value="ATTORNEY">Attorney / paralegal</option>
       </select>
       {error && <p className="text-sm text-red-700">{error}</p>}
-      <button className="rounded-xl bg-navy px-4 py-2.5 font-semibold text-white">Create invite link</button>
+      <button className="rounded-xl bg-forest px-4 py-2.5 font-semibold text-white">Create invite link</button>
       {url && (
         <p className="break-all rounded-xl bg-mist p-3 text-sm">
           Invite link: {url}

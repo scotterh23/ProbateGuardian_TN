@@ -38,7 +38,7 @@ export default function NewEstatePage() {
       <Link href="/admin" className="text-sm text-muted">
         ← Admin
       </Link>
-      <h1 className="mt-4 font-serif text-3xl text-navy">Create an estate</h1>
+      <h1 className="mt-4 font-serif text-3xl text-forest">Create an estate</h1>
       <p className="mt-2 mb-6 text-muted">
         Start with the property. Then open the estate and invite the executor, heirs, and attorney.
       </p>
@@ -58,7 +58,7 @@ export default function NewEstatePage() {
           </select>
         </label>
         {error && <p className="text-sm text-red-700">{error}</p>}
-        <button className="w-full rounded-xl bg-navy py-3 font-semibold text-white" disabled={pending}>
+        <button className="btn-primary w-full rounded-xl py-3" disabled={pending}>
           {pending ? "Saving…" : "Create estate"}
         </button>
       </form>

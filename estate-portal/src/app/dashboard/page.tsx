@@ -38,14 +38,14 @@ export default async function DashboardPage() {
       <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-muted">Dashboard</p>
-          <h1 className="font-serif text-3xl text-navy">{heading}</h1>
+          <h1 className="font-serif text-3xl text-forest">{heading}</h1>
           <p className="mt-1 max-w-xl text-muted">
             Status and the latest update are the two things that matter most. Open an estate to see
             the full timeline, documents, and conversation.
           </p>
         </div>
         {session.role === "ADMIN" && (
-          <Link href="/admin/estates/new" className="rounded-xl bg-navy px-4 py-3 font-semibold text-white">
+          <Link href="/admin/estates/new" className="btn-primary rounded-xl px-4 py-3">
             New estate
           </Link>
         )}
@@ -61,11 +61,11 @@ export default async function DashboardPage() {
             <li key={estate.id}>
               <Link
                 href={`/estates/${estate.id}`}
-                className="card block p-5 transition hover:border-navy/30"
+                className="card block p-5 transition hover:border-forest-600"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h2 className="font-serif text-xl text-navy">{estate.nickname}</h2>
+                    <h2 className="font-serif text-xl text-forest">{estate.nickname}</h2>
                     <p className="text-muted">
                       {estate.address}, {estate.city} · {estate.county} County
                     </p>

@@ -24,7 +24,7 @@ export default async function AdminPage() {
           <h1 className="font-serif text-3xl">Admin</h1>
           <p className="mt-1 text-muted">Create estates, invite people, and keep status current.</p>
         </div>
-        <Link href="/admin/estates/new" className="rounded-xl bg-navy px-4 py-3 font-semibold text-white">
+        <Link href="/admin/estates/new" className="btn-primary rounded-xl px-4 py-3">
           Create estate
         </Link>
       </div>
@@ -32,7 +32,7 @@ export default async function AdminPage() {
         {estates.map((estate) => (
           <li key={estate.id} className="card flex flex-wrap items-center justify-between gap-3 p-4">
             <div>
-              <Link href={`/estates/${estate.id}`} className="font-serif text-lg text-navy">
+              <Link href={`/estates/${estate.id}`} className="font-serif text-lg text-forest">
                 {estate.nickname}
               </Link>
               <p className="text-sm text-muted">

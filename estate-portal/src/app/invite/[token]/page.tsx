@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useParams } from "next/navigation";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export default function InvitePage() {
   const { token } = useParams<{ token: string }>();
@@ -32,9 +33,12 @@ export default function InvitePage() {
   }
 
   return (
-    <div className="min-h-screen bg-paper px-4 py-12">
+    <div className="min-h-screen bg-cream px-4 py-12">
+      <div className="mx-auto mb-6 flex max-w-md justify-center">
+        <BrandLogo href={null} size="hero" />
+      </div>
       <div className="mx-auto max-w-md card p-6">
-        <h1 className="font-serif text-2xl text-navy">Join this estate</h1>
+        <h1 className="font-serif text-2xl text-forest">Join this estate</h1>
         <p className="mt-2 mb-6 text-muted">
           Create your access so you can follow the property with the rest of the family.
         </p>
@@ -59,7 +63,7 @@ export default function InvitePage() {
             />
           </div>
           {error && <p className="text-sm text-red-700">{error}</p>}
-          <button className="w-full rounded-xl bg-navy py-3 font-semibold text-white" disabled={pending}>
+          <button className="btn-primary w-full rounded-xl py-3" disabled={pending}>
             {pending ? "Saving…" : "Continue"}
           </button>
         </form>

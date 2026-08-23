@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { SessionUser } from "@/lib/auth";
 import { ROLE_LABEL } from "@/lib/status";
+import { BrandLogo } from "@/components/BrandLogo";
 
 export function Shell({
   user,
@@ -10,28 +11,16 @@ export function Shell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-20 border-b border-line bg-white/95 backdrop-blur">
+    <div className="min-h-screen bg-cream">
+      <header className="sticky top-0 z-20 border-b border-line bg-warm-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
-          <Link href="/dashboard" className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-navy text-sm font-semibold text-white">
-              PG
-            </span>
-            <span>
-              <span className="block font-serif text-base leading-tight text-navy">
-                Probate Guardians
-              </span>
-              <span className="block text-xs tracking-wide text-muted">
-                Estate Portal
-              </span>
-            </span>
-          </Link>
+          <BrandLogo href="/dashboard" />
           <nav className="flex items-center gap-2 text-sm">
-            <Link className="rounded-lg px-3 py-2 text-navy hover:bg-mist" href="/dashboard">
+            <Link className="rounded-lg px-3 py-2 text-forest hover:bg-mist" href="/dashboard">
               Estates
             </Link>
             {user.role === "ADMIN" && (
-              <Link className="rounded-lg px-3 py-2 text-navy hover:bg-mist" href="/admin">
+              <Link className="rounded-lg px-3 py-2 text-forest hover:bg-mist" href="/admin">
                 Admin
               </Link>
             )}

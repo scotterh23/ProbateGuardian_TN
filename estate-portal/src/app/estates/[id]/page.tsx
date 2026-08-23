@@ -54,7 +54,7 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
         </p>
         <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="font-serif text-3xl text-navy">{estate.nickname}</h1>
+            <h1 className="font-serif text-3xl text-forest">{estate.nickname}</h1>
             <p className="text-lg text-muted">
               {estate.address}, {estate.city}
             </p>
