@@ -5,6 +5,7 @@ import {
   canDeleteDocs,
   canManageEstate,
   canPostUpdate,
+  canUpdateProgress,
   canUploadDocs,
   canViewAllQuestions,
   getEstateAccess,
@@ -14,6 +15,8 @@ import { prisma } from "@/lib/db";
 import { Shell } from "@/components/Shell";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Timeline } from "@/components/Timeline";
+import { ProgressTrack } from "@/components/ProgressTrack";
+import { EstateGlossary } from "@/components/EstateGlossary";
 import { ROLE_LABEL } from "@/lib/status";
 import {
   DeleteEstateForm,
@@ -21,6 +24,7 @@ import {
   DocumentUpload,
   InviteForm,
   PostUpdateForm,
+  ProgressEditor,
   QuestionForm,
   QuestionList,
   StatusEditor,
@@ -92,15 +96,37 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
         </div>
       </div>
 
-      <section className="card mb-6 p-5">
-        <h2 className="mb-4 font-serif text-xl">Where things stand</h2>
-        <Timeline status={estate.status} />
-        {canManageEstate(role) && (
-          <div className="mt-5 border-t border-line pt-4">
-            <StatusEditor estateId={estate.id} status={estate.status} />
-          </div>
-        )}
-      </section>
+      <div className="mb-6 grid gap-6 lg:grid-cols-2">
+        <section className="card p-5">
+          <h2 className="font-serif text-xl">House progress</h2>
+          <p className="mt-1 mb-4 text-sm text-muted">
+            Where the inherited property is in the sale path. Separate from the court file.
+          </p>
+          <Timeline status={estate.status} />
+          {canManageEstate(role) && (
+            <div className="mt-5 border-t border-line pt-4">
+              <StatusEditor estateId={estate.id} status={estate.status} />
+            </div>
+          )}
+        </section>
+        <section className="card p-5">
+          <h2 className="font-serif text-xl">Overall estate progress</h2>
+          <p className="mt-1 mb-4 text-sm text-muted">
+            The probate case itself. Timelines vary by county and facts — your attorney and the
+            court have the final word.
+          </p>
+          <ProgressTrack progress={estate.progress} />
+          {canUpdateProgress(role) && (
+            <div className="mt-5 border-t border-line pt-4">
+              <ProgressEditor estateId={estate.id} progress={estate.progress} />
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="mb-6">
+        <EstateGlossary />
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
         <section className="card p-5">

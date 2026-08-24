@@ -11,7 +11,7 @@ Live intent: `portal.probateguardians.com`.
 - Email + password login with role-based access
 - Admin-created invite links (executor, heir, attorney)
 - Estate dashboard with status and last update
-- Estate workspace: timeline, activity feed, document vault
+- Estate workspace: house timeline, overall probate progress, glossary, activity, document vault
 - Heirs send private questions to the Probate Guardians team (not visible to other heirs)
 - Admin: create/delete estates, invite users, edit status
 - Admin/executor: delete documents from the vault

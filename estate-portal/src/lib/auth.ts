@@ -123,6 +123,10 @@ export function canManageEstate(role: UserRole) {
   return role === "ADMIN";
 }
 
+export function canUpdateProgress(role: UserRole) {
+  return role === "ADMIN" || role === "EXECUTOR";
+}
+
 export function canComment(role: UserRole) {
   return role === "ADMIN" || role === "EXECUTOR" || role === "ATTORNEY";
 }

@@ -2,8 +2,8 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { EstateStatus, UserRole } from "@prisma/client";
-import { DOC_LABEL, ROLE_LABEL, STATUS_LABEL } from "@/lib/status";
+import { EstateProgress, EstateStatus, UserRole } from "@prisma/client";
+import { DOC_LABEL, PROGRESS_LABEL, ROLE_LABEL, STATUS_LABEL } from "@/lib/status";
 
 type Comment = {
   id: string;
@@ -290,13 +290,48 @@ export function StatusEditor({
   }
   return (
     <label className="text-sm">
-      <span className="mb-1 block font-semibold">Update status</span>
+      <span className="mb-1 block font-semibold">Update house status</span>
       <select
         defaultValue={status}
         onChange={onChange}
         className="rounded-xl border border-line bg-white px-3 py-2"
       >
         {Object.entries(STATUS_LABEL).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export function ProgressEditor({
+  estateId,
+  progress,
+}: {
+  estateId: string;
+  progress: EstateProgress;
+}) {
+  const router = useRouter();
+  async function onChange(e: React.ChangeEvent<HTMLSelectElement>) {
+    await fetch(`/api/estates/${estateId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ progress: e.target.value }),
+    });
+    router.refresh();
+  }
+  return (
+    <label className="text-sm">
+      <span className="mb-1 block font-semibold">Update estate stage</span>
+      <select
+        defaultValue={progress}
+        onChange={onChange}
+        className="w-full rounded-xl border border-line bg-white px-3 py-2"
+      >
+        {Object.entries(PROGRESS_LABEL).map(([value, label]) => (
           <option key={value} value={value}>
             {label}
           </option>

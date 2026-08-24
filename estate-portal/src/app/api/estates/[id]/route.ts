@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { getEstateAccess, getSession } from "@/lib/auth";
+import { canUpdateProgress, getEstateAccess, getSession } from "@/lib/auth";
 import { removeUpload } from "@/lib/files";
 
 const patchSchema = z.object({
@@ -10,6 +10,17 @@ const patchSchema = z.object({
   city: z.string().min(2).optional(),
   county: z.string().min(2).optional(),
   status: z.enum(["LETTERS", "VALUATION", "LISTED", "UNDER_CONTRACT", "CLOSED"]).optional(),
+  progress: z
+    .enum([
+      "LETTERS_ISSUED",
+      "INVENTORY_FILED",
+      "NOTICE_TO_CREDITORS",
+      "CREDITOR_PERIOD_ENDED",
+      "DEBTS_TAXES_SETTLED",
+      "FINAL_ACCOUNTING",
+      "ESTATE_CLOSED",
+    ])
+    .optional(),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -45,15 +56,30 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const session = await getSession();
-  if (!session || session.role !== "ADMIN") {
-    return NextResponse.json({ error: "Admin only." }, { status: 403 });
-  }
+  if (!session) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   const { id } = await params;
+  const access = await getEstateAccess(session, id);
+  if (!access.allowed || !access.role) {
+    return NextResponse.json({ error: "Not found." }, { status: 404 });
+  }
   const parsed = patchSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid estate update." }, { status: 400 });
   }
-  const estate = await prisma.estate.update({ where: { id }, data: parsed.data });
+  const { progress, ...rest } = parsed.data;
+  const otherFields = Object.fromEntries(
+    Object.entries(rest).filter(([, value]) => value !== undefined),
+  );
+  if (Object.keys(otherFields).length > 0 && session.role !== "ADMIN") {
+    return NextResponse.json({ error: "Admin only." }, { status: 403 });
+  }
+  if (progress && !canUpdateProgress(access.role)) {
+    return NextResponse.json({ error: "Only the executor and Probate Guardians can update estate progress." }, { status: 403 });
+  }
+  const estate = await prisma.estate.update({
+    where: { id },
+    data: { ...otherFields, ...(progress ? { progress } : {}) },
+  });
   return NextResponse.json({ estate });
 }
 

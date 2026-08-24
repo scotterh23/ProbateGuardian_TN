@@ -23,6 +23,16 @@ enum EstateStatus {
   CLOSED
 }
 
+enum EstateProgress {
+  LETTERS_ISSUED
+  INVENTORY_FILED
+  NOTICE_TO_CREDITORS
+  CREDITOR_PERIOD_ENDED
+  DEBTS_TAXES_SETTLED
+  FINAL_ACCOUNTING
+  ESTATE_CLOSED
+}
+
 enum DocumentCategory {
   WILL
   LETTERS
@@ -54,8 +64,9 @@ model Estate {
   address   String
   city      String
   county    String
-  status    EstateStatus @default(LETTERS)
-  createdAt DateTime     @default(now())
+  status    EstateStatus   @default(LETTERS)
+  progress  EstateProgress @default(LETTERS_ISSUED)
+  createdAt DateTime       @default(now())
   updatedAt DateTime     @updatedAt
 
   members   EstateMember[]
