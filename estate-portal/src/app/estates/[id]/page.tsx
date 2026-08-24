@@ -141,6 +141,7 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
               marketNet: estate.marketNet,
               marketNotes: estate.marketNotes,
               listingUrl: estate.listingUrl,
+              contractUrl: estate.contractUrl,
               settlementUrl: estate.settlementUrl,
               settlementFileName: estate.settlementFileName,
             }}

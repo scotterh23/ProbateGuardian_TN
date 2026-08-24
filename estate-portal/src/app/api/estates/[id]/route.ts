@@ -39,6 +39,7 @@ const patchSchema = z.object({
   marketNet: z.number().int().nonnegative().nullable().optional(),
   marketNotes: z.string().max(500).nullable().optional(),
   listingUrl: z.string().max(500).nullable().optional(),
+  contractUrl: z.string().max(500).nullable().optional(),
   settlementUrl: z.string().max(500).nullable().optional(),
 });
 
@@ -102,6 +103,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     marketNet,
     marketNotes,
     listingUrl,
+    contractUrl,
     settlementUrl,
     ...adminRest
   } = parsed.data;
@@ -125,6 +127,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       marketNet,
       marketNotes,
       listingUrl,
+      contractUrl,
       settlementUrl,
     }).filter(([, value]) => value !== undefined),
   );

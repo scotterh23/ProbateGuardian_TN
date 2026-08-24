@@ -365,6 +365,7 @@ type Snapshot = {
   marketNet: number | null;
   marketNotes: string | null;
   listingUrl: string | null;
+  contractUrl: string | null;
   settlementUrl: string | null;
   settlementFileName: string | null;
 };
@@ -373,6 +374,47 @@ function hrefFor(url: string) {
   const text = url.trim();
   if (!text) return "";
   return /^https?:\/\//i.test(text) ? text : `https://${text}`;
+}
+
+function VerifyLink({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="btn-primary inline-flex rounded-xl px-4 py-2.5 text-sm"
+    >
+      {label}
+    </a>
+  );
+}
+
+function SnapshotVerify({
+  href,
+  label,
+  emptyHint,
+  canEdit,
+}: {
+  href: string | null;
+  label: string;
+  emptyHint: string;
+  canEdit: boolean;
+}) {
+  if (href) {
+    return (
+      <div className="mb-3">
+        <VerifyLink href={href} label={label} />
+      </div>
+    );
+  }
+  if (canEdit) {
+    return <p className="mb-2 text-sm text-muted">{emptyHint}</p>;
+  }
+  return null;
+}
+
+function FieldHint({ children }: { children: string }) {
+  return <span className="mt-1 block text-xs text-muted">{children}</span>;
 }
 
 function parseDollars(raw: FormDataEntryValue | null) {
@@ -422,6 +464,7 @@ export function PropertySnapshot({
     if (status === "UNDER_CONTRACT") {
       payload.contractPrice = parseDollars(form.get("contractPrice"));
       payload.transactionStatus = String(form.get("transactionStatus") || "") || null;
+      payload.contractUrl = String(form.get("contractUrl") || "").trim() || null;
     }
     if (status === "CLOSED") {
       payload.salePrice = parseDollars(form.get("salePrice"));
@@ -571,6 +614,7 @@ export function PropertySnapshot({
                   placeholder="https://www.realtracs.com/..."
                   className="mt-1 w-full rounded-xl border border-line px-3 py-2"
                 />
+                <FieldHint>Family sees a “View listing” button.</FieldHint>
               </label>
               <label className="block text-sm">
                 Listing notes
@@ -610,6 +654,16 @@ export function PropertySnapshot({
                   ))}
                 </select>
               </label>
+              <label className="block text-sm">
+                Contract details link
+                <input
+                  name="contractUrl"
+                  defaultValue={snapshot.contractUrl ?? ""}
+                  placeholder="https://..."
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+                <FieldHint>Optional. Family sees a “View contract details” button.</FieldHint>
+              </label>
             </>
           )}
           {status === "CLOSED" && (
@@ -635,16 +689,24 @@ export function PropertySnapshot({
                 />
               </label>
               <label className="block text-sm">
-                Settlement statement / closing docs link
+                Closing documents link
                 <input
                   name="settlementUrl"
                   defaultValue={snapshot.settlementUrl ?? ""}
                   placeholder="https://..."
                   className="mt-1 w-full rounded-xl border border-line px-3 py-2"
                 />
+                <FieldHint>
+                  HUD, settlement statement, or title-company page. Family sees a “View closing documents” button.
+                </FieldHint>
               </label>
               <label className="block text-sm">
-                Or upload closing document
+                Or upload the settlement statement
+                {snapshot.settlementFileName ? (
+                  <span className="mt-1 block text-xs text-muted">
+                    Current file: {snapshot.settlementFileName}
+                  </span>
+                ) : null}
                 <input name="file" type="file" className="mt-1 w-full text-sm" />
               </label>
               <label className="block text-sm">
@@ -711,20 +773,12 @@ export function PropertySnapshot({
           <dl className="space-y-1 text-sm">
           {status === "LISTED" && (
             <>
-              {snapshot.listingUrl ? (
-                <div className="mb-3">
-                  <a
-                    href={hrefFor(snapshot.listingUrl)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-primary inline-flex rounded-xl px-4 py-2.5 text-sm"
-                  >
-                    View listing
-                  </a>
-                </div>
-              ) : (
-                <p className="mb-2 text-muted">No listing link yet.</p>
-              )}
+              <SnapshotVerify
+                href={snapshot.listingUrl ? hrefFor(snapshot.listingUrl) : null}
+                label="View listing"
+                emptyHint="Add a RealTracs / listing link so the family can verify."
+                canEdit={canEdit}
+              />
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">List price</dt>
                 <dd className="font-semibold text-forest">{formatDollars(snapshot.listPrice)}</dd>
@@ -734,6 +788,12 @@ export function PropertySnapshot({
           )}
           {status === "UNDER_CONTRACT" && (
             <>
+              <SnapshotVerify
+                href={snapshot.contractUrl ? hrefFor(snapshot.contractUrl) : null}
+                label="View contract details"
+                emptyHint="Add a contract details link so the family can verify."
+                canEdit={canEdit}
+              />
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">Contract price</dt>
                 <dd className="font-semibold text-forest">{formatDollars(snapshot.contractPrice)}</dd>
@@ -752,34 +812,23 @@ export function PropertySnapshot({
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted">Net to the estate</p>
                 <p className="font-serif text-3xl font-bold text-forest">{formatDollars(snapshot.netToEstate)}</p>
               </div>
+              <SnapshotVerify
+                href={
+                  snapshot.settlementUrl
+                    ? hrefFor(snapshot.settlementUrl)
+                    : snapshot.settlementFileName
+                      ? `/api/estates/${estateId}/closing-doc`
+                      : null
+                }
+                label="View closing documents"
+                emptyHint="Add a closing documents link or upload the settlement statement so the family can verify."
+                canEdit={canEdit}
+              />
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">Final sale price</dt>
                 <dd className="font-semibold text-forest">{formatDollars(snapshot.salePrice)}</dd>
               </div>
               {snapshot.netNotes ? <dd className="text-muted">{snapshot.netNotes}</dd> : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                {snapshot.settlementUrl ? (
-                  <a
-                    href={hrefFor(snapshot.settlementUrl)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="btn-primary inline-flex rounded-xl px-3 py-2 text-sm"
-                  >
-                    Settlement statement
-                  </a>
-                ) : null}
-                {snapshot.settlementFileName ? (
-                  <a
-                    href={`/api/estates/${estateId}/closing-doc`}
-                    className="inline-flex rounded-xl border border-line px-3 py-2 text-sm font-semibold text-forest"
-                  >
-                    {snapshot.settlementFileName}
-                  </a>
-                ) : null}
-                {!snapshot.settlementUrl && !snapshot.settlementFileName ? (
-                  <p className="text-muted">No settlement statement uploaded yet.</p>
-                ) : null}
-              </div>
             </>
           )}
         </dl>

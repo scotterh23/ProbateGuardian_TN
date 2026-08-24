@@ -114,6 +114,7 @@ model Estate {
   marketNet          Int?
   marketNotes        String?
   listingUrl         String?
+  contractUrl        String?
   settlementUrl      String?
   settlementFileName String?
   settlementFilePath String?
