@@ -35,6 +35,15 @@ body {
   font-family: var(--font-serif), Georgia, serif;
 }
 
+.section-title {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #0f2922;
+  line-height: 1.2;
+}
+
 input,
 select,
 textarea,

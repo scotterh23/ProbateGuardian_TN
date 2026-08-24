@@ -49,6 +49,7 @@ enum VendorCategory {
   HANDYMAN
   APPRAISER
   CASH_ADVANCE
+  OTHER
 }
 
 enum DocumentCategory {
@@ -112,6 +113,11 @@ model Estate {
   prepCosts          Int?
   marketNet          Int?
   marketNotes        String?
+  listingUrl         String?
+  settlementUrl      String?
+  settlementFileName String?
+  settlementFilePath String?
+  settlementFileMime String?
   createdAt DateTime       @default(now())
   updatedAt DateTime     @updatedAt
 

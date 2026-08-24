@@ -28,7 +28,7 @@ const ITEMS: { term: string; body: string }[] = [
 export function EstateGlossary() {
   return (
     <section className="card p-5">
-      <h2 className="font-serif text-xl">FAQ & glossary</h2>
+      <h2 className="section-title">FAQ & glossary</h2>
       <p className="mt-1 text-sm text-muted">
         Plain-language notes for families. This is not legal advice. Your probate attorney and the
         court have the final word.

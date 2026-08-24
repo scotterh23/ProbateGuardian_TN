@@ -364,7 +364,16 @@ type Snapshot = {
   prepCosts: number | null;
   marketNet: number | null;
   marketNotes: string | null;
+  listingUrl: string | null;
+  settlementUrl: string | null;
+  settlementFileName: string | null;
 };
+
+function hrefFor(url: string) {
+  const text = url.trim();
+  if (!text) return "";
+  return /^https?:\/\//i.test(text) ? text : `https://${text}`;
+}
 
 function parseDollars(raw: FormDataEntryValue | null) {
   const text = String(raw || "").replace(/[$,\s]/g, "");
@@ -407,6 +416,7 @@ export function PropertySnapshot({
     }
     if (status === "LISTED") {
       payload.listPrice = parseDollars(form.get("listPrice"));
+      payload.listingUrl = String(form.get("listingUrl") || "").trim() || null;
       payload.listingNotes = String(form.get("listingNotes") || "").trim() || null;
     }
     if (status === "UNDER_CONTRACT") {
@@ -417,6 +427,7 @@ export function PropertySnapshot({
       payload.salePrice = parseDollars(form.get("salePrice"));
       payload.netToEstate = parseDollars(form.get("netToEstate"));
       payload.netNotes = String(form.get("netNotes") || "").trim() || null;
+      payload.settlementUrl = String(form.get("settlementUrl") || "").trim() || null;
     }
     const res = await fetch(`/api/estates/${estateId}`, {
       method: "PATCH",
@@ -425,11 +436,26 @@ export function PropertySnapshot({
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    setPending(false);
     if (!res.ok) {
+      setPending(false);
       setError(data.error || "Could not save the snapshot.");
       return;
     }
+    const closing = form.get("file");
+    if (status === "CLOSED" && closing instanceof File && closing.size > 0) {
+      const upload = await fetch(`/api/estates/${estateId}/closing-doc`, {
+        method: "POST",
+        credentials: "same-origin",
+        body: form,
+      });
+      if (!upload.ok) {
+        const uploadData = await upload.json().catch(() => ({}));
+        setPending(false);
+        setError(uploadData.error || "Snapshot saved, but the closing document did not upload.");
+        return;
+      }
+    }
+    setPending(false);
     setEditing(false);
     router.refresh();
   }
@@ -538,6 +564,15 @@ export function PropertySnapshot({
                 />
               </label>
               <label className="block text-sm">
+                RealTracs / listing link
+                <input
+                  name="listingUrl"
+                  defaultValue={snapshot.listingUrl ?? ""}
+                  placeholder="https://www.realtracs.com/..."
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
                 Listing notes
                 <textarea
                   name="listingNotes"
@@ -589,8 +624,8 @@ export function PropertySnapshot({
                   className="mt-1 w-full rounded-xl border border-line px-3 py-2"
                 />
               </label>
-              <label className="block text-sm">
-                Net to estate
+              <label className="block text-sm font-semibold">
+                Exact net to estate
                 <input
                   name="netToEstate"
                   defaultValue={snapshot.netToEstate ?? ""}
@@ -598,6 +633,19 @@ export function PropertySnapshot({
                   placeholder="312000"
                   className="mt-1 w-full rounded-xl border border-line px-3 py-2"
                 />
+              </label>
+              <label className="block text-sm">
+                Settlement statement / closing docs link
+                <input
+                  name="settlementUrl"
+                  defaultValue={snapshot.settlementUrl ?? ""}
+                  placeholder="https://..."
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                Or upload closing document
+                <input name="file" type="file" className="mt-1 w-full text-sm" />
               </label>
               <label className="block text-sm">
                 Net notes
@@ -663,11 +711,25 @@ export function PropertySnapshot({
           <dl className="space-y-1 text-sm">
           {status === "LISTED" && (
             <>
+              {snapshot.listingUrl ? (
+                <div className="mb-3">
+                  <a
+                    href={hrefFor(snapshot.listingUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-primary inline-flex rounded-xl px-4 py-2.5 text-sm"
+                  >
+                    View listing
+                  </a>
+                </div>
+              ) : (
+                <p className="mb-2 text-muted">No listing link yet.</p>
+              )}
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">List price</dt>
                 <dd className="font-semibold text-forest">{formatDollars(snapshot.listPrice)}</dd>
               </div>
-              {snapshot.listingNotes ? <dd className="text-muted">{snapshot.listingNotes}</dd> : <dd className="text-muted">No listing notes yet.</dd>}
+              {snapshot.listingNotes ? <dd className="text-muted">{snapshot.listingNotes}</dd> : null}
             </>
           )}
           {status === "UNDER_CONTRACT" && (
@@ -686,15 +748,38 @@ export function PropertySnapshot({
           )}
           {status === "CLOSED" && (
             <>
+              <div className="mb-3 rounded-xl bg-mist px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted">Net to the estate</p>
+                <p className="font-serif text-3xl font-bold text-forest">{formatDollars(snapshot.netToEstate)}</p>
+              </div>
               <div className="flex justify-between gap-4">
                 <dt className="text-muted">Final sale price</dt>
                 <dd className="font-semibold text-forest">{formatDollars(snapshot.salePrice)}</dd>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted">Net to estate</dt>
-                <dd className="font-semibold text-forest">{formatDollars(snapshot.netToEstate)}</dd>
-              </div>
               {snapshot.netNotes ? <dd className="text-muted">{snapshot.netNotes}</dd> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {snapshot.settlementUrl ? (
+                  <a
+                    href={hrefFor(snapshot.settlementUrl)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="btn-primary inline-flex rounded-xl px-3 py-2 text-sm"
+                  >
+                    Settlement statement
+                  </a>
+                ) : null}
+                {snapshot.settlementFileName ? (
+                  <a
+                    href={`/api/estates/${estateId}/closing-doc`}
+                    className="inline-flex rounded-xl border border-line px-3 py-2 text-sm font-semibold text-forest"
+                  >
+                    {snapshot.settlementFileName}
+                  </a>
+                ) : null}
+                {!snapshot.settlementUrl && !snapshot.settlementFileName ? (
+                  <p className="text-muted">No settlement statement uploaded yet.</p>
+                ) : null}
+              </div>
             </>
           )}
         </dl>

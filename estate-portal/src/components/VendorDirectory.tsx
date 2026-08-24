@@ -65,7 +65,7 @@ export function VendorDirectory({
     <section className="card p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-serif text-xl">Recommended Vendors</h2>
+          <h2 className="section-title">Recommended Vendors</h2>
           <p className="mt-1 max-w-2xl text-sm text-muted">
             These are professionals we regularly work with on probate properties. You can request an
             introduction or contact them directly.

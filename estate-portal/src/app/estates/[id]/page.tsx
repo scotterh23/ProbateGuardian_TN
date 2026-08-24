@@ -111,7 +111,7 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
 
       <div className="mb-6 grid gap-6 lg:grid-cols-2">
         <section className="card p-5">
-          <h2 className="font-serif text-xl">House progress</h2>
+          <h2 className="section-title">House progress</h2>
           <p className="mt-1 mb-4 text-sm text-muted">
             Where the inherited property is in the sale path. Separate from the court file.
           </p>
@@ -140,11 +140,14 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
               prepCosts: estate.prepCosts,
               marketNet: estate.marketNet,
               marketNotes: estate.marketNotes,
+              listingUrl: estate.listingUrl,
+              settlementUrl: estate.settlementUrl,
+              settlementFileName: estate.settlementFileName,
             }}
           />
         </section>
         <section className="card p-5">
-          <h2 className="font-serif text-xl">Overall estate progress</h2>
+          <h2 className="section-title">Overall estate progress</h2>
           <p className="mt-1 mb-4 text-sm text-muted">
             The probate case itself. Timelines vary by county and facts — your attorney and the
             court have the final word.
@@ -168,7 +171,7 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
         <section className="card p-5">
-          <h2 className="mb-4 font-serif text-xl">Activity</h2>
+          <h2 className="section-title mb-4">Activity</h2>
           {canPostUpdate(role) && (
             <div className="mb-8 rounded-xl bg-mist p-4">
               <PostUpdateForm estateId={estate.id} />
@@ -185,7 +188,7 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
 
         <div className="space-y-6">
           <section className="card p-5">
-            <h2 className="font-serif text-xl">People on this estate</h2>
+            <h2 className="section-title">People on this estate</h2>
             <ul className="mt-3 space-y-2">
               {estate.members.map((m) => (
                 <li key={m.id} className="text-sm">
@@ -204,7 +207,7 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
 
           {(canAskQuestion(role) || canViewAllQuestions(role)) && (
             <section className="card p-5">
-              <h2 className="font-serif text-xl">
+              <h2 className="section-title">
                 {canViewAllQuestions(role) ? "Family questions" : "Ask Probate Guardians"}
               </h2>
               <p className="mt-1 text-sm text-muted">
@@ -234,7 +237,7 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
           )}
 
           <section className="card p-5">
-            <h2 className="font-serif text-xl">Document vault</h2>
+            <h2 className="section-title">Document vault</h2>
             <p className="mt-1 text-sm text-muted">
               Wills, Letters, appraisals, photos, and contracts — in one place.
             </p>

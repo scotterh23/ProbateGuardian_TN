@@ -13,6 +13,7 @@ const vendorSchema = z.object({
     "HANDYMAN",
     "APPRAISER",
     "CASH_ADVANCE",
+    "OTHER",
   ]),
   name: z.string().min(2).max(120),
   description: z.string().min(8).max(400),

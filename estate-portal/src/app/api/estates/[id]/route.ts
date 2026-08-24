@@ -38,6 +38,8 @@ const patchSchema = z.object({
   prepCosts: z.number().int().nonnegative().nullable().optional(),
   marketNet: z.number().int().nonnegative().nullable().optional(),
   marketNotes: z.string().max(500).nullable().optional(),
+  listingUrl: z.string().max(500).nullable().optional(),
+  settlementUrl: z.string().max(500).nullable().optional(),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -99,6 +101,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     prepCosts,
     marketNet,
     marketNotes,
+    listingUrl,
+    settlementUrl,
     ...adminRest
   } = parsed.data;
   const adminFields = Object.fromEntries(
@@ -120,6 +124,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       prepCosts,
       marketNet,
       marketNotes,
+      listingUrl,
+      settlementUrl,
     }).filter(([, value]) => value !== undefined),
   );
   if (Object.keys(adminFields).length > 0 && session.role !== "ADMIN") {

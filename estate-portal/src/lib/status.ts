@@ -88,6 +88,7 @@ export const VENDOR_CATEGORY_ORDER: VendorCategory[] = [
   "HANDYMAN",
   "APPRAISER",
   "CASH_ADVANCE",
+  "OTHER",
 ];
 
 export const VENDOR_CATEGORY_LABEL: Record<VendorCategory, string> = {
@@ -99,6 +100,7 @@ export const VENDOR_CATEGORY_LABEL: Record<VendorCategory, string> = {
   HANDYMAN: "Light Repairs / Handyman",
   APPRAISER: "Appraiser",
   CASH_ADVANCE: "Cash Advance / Cost Coverage",
+  OTHER: "Other",
 };
 
 export const DOC_LABEL: Record<string, string> = {
