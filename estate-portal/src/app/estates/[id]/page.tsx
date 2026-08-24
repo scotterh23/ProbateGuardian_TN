@@ -8,6 +8,7 @@ import {
   canUpdateProgress,
   canUpdateSnapshot,
   canUploadDocs,
+  canManageVendors,
   canViewAllQuestions,
   getEstateAccess,
   getSession,
@@ -18,6 +19,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Timeline } from "@/components/Timeline";
 import { ProgressTrack } from "@/components/ProgressTrack";
 import { EstateGlossary } from "@/components/EstateGlossary";
+import { VendorDirectory } from "@/components/VendorDirectory";
 import { ROLE_LABEL } from "@/lib/status";
 import {
   DocumentList,
@@ -65,6 +67,10 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
     },
   });
   if (!estate) notFound();
+
+  const vendors = await prisma.vendor.findMany({
+    orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+  });
 
   const role = access.role;
   const attorneyView = role === "ATTORNEY";
@@ -150,6 +156,14 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
             </div>
           )}
         </section>
+      </div>
+
+      <div className="mb-6">
+        <VendorDirectory
+          estateId={estate.id}
+          canManage={canManageVendors(role)}
+          vendors={vendors}
+        />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">

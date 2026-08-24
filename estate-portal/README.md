@@ -16,6 +16,7 @@ Live intent: `portal.probateguardians.com`.
 - Admin: create/delete estates, invite users, edit status
 - Admin/executor: delete documents from the vault
 - Invite emails via Resend (`portal@probateguardians.com`)
+- Curated recommended vendors on each estate (admin-managed)
 
 **Not in Phase 1:** notifications, vendor marketplace, CRM sync, payments.
 

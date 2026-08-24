@@ -1,4 +1,4 @@
-import { EstateProgress, EstateStatus, TransactionStatus, UserRole } from "@prisma/client";
+import { EstateProgress, EstateStatus, TransactionStatus, UserRole, VendorCategory } from "@prisma/client";
 
 export const STATUS_ORDER: EstateStatus[] = [
   "LETTERS",
@@ -77,6 +77,28 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   EXECUTOR: "Executor",
   HEIR: "Heir",
   ATTORNEY: "Attorney",
+};
+
+export const VENDOR_CATEGORY_ORDER: VendorCategory[] = [
+  "ESTATE_SALE",
+  "CLEAN_OUT",
+  "LAWN",
+  "LOCKSMITH",
+  "CLEANING",
+  "HANDYMAN",
+  "APPRAISER",
+  "CASH_ADVANCE",
+];
+
+export const VENDOR_CATEGORY_LABEL: Record<VendorCategory, string> = {
+  ESTATE_SALE: "Estate Sale / Personal Property",
+  CLEAN_OUT: "Clean-out / Junk Removal",
+  LAWN: "Lawn & Exterior Maintenance",
+  LOCKSMITH: "Locksmith / Re-key",
+  CLEANING: "Cleaning",
+  HANDYMAN: "Light Repairs / Handyman",
+  APPRAISER: "Appraiser",
+  CASH_ADVANCE: "Cash Advance / Cost Coverage",
 };
 
 export const DOC_LABEL: Record<string, string> = {

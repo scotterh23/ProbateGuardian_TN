@@ -22,7 +22,10 @@ export default async function AdminPage() {
         <div>
           <p className="text-sm font-semibold uppercase tracking-wide text-muted">Probate Guardians</p>
           <h1 className="font-serif text-3xl">Admin</h1>
-          <p className="mt-1 text-muted">Create estates, invite people, and keep status current.</p>
+          <p className="mt-1 text-muted">
+            Create estates, invite people, and keep status current. Edit recommended vendors on any
+            estate page.
+          </p>
         </div>
         <Link href="/admin/estates/new" className="btn-primary rounded-xl px-4 py-3">
           Create estate

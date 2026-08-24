@@ -40,6 +40,17 @@ enum EstateProgress {
   ESTATE_CLOSED
 }
 
+enum VendorCategory {
+  ESTATE_SALE
+  CLEAN_OUT
+  LAWN
+  LOCKSMITH
+  CLEANING
+  HANDYMAN
+  APPRAISER
+  CASH_ADVANCE
+}
+
 enum DocumentCategory {
   WILL
   LETTERS
@@ -63,6 +74,20 @@ model User {
   documents   Document[]
   questions   EstateQuestion[]
   invitesSent Invite[]       @relation("InvitedBy")
+}
+
+model Vendor {
+  id          String         @id @default(cuid())
+  category    VendorCategory
+  name        String
+  description String
+  phone       String?
+  email       String?
+  serviceArea String?
+  notes       String?
+  sortOrder   Int            @default(0)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 }
 
 model Estate {
