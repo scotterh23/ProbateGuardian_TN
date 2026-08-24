@@ -358,6 +358,12 @@ type Snapshot = {
   salePrice: number | null;
   netToEstate: number | null;
   netNotes: string | null;
+  cashOfferRange: string | null;
+  cashNet: number | null;
+  cashNotes: string | null;
+  prepCosts: number | null;
+  marketNet: number | null;
+  marketNotes: string | null;
 };
 
 function parseDollars(raw: FormDataEntryValue | null) {
@@ -382,18 +388,7 @@ export function PropertySnapshot({
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
-
-  if (status === "LETTERS") {
-    return (
-      <div className="mt-5 border-t border-line pt-4">
-        <h3 className="text-sm font-semibold text-forest">Property snapshot</h3>
-        <p className="mt-1 text-sm text-muted">
-          After Letters, the house can typically be listed. Add a value here when valuation is
-          underway.
-        </p>
-      </div>
-    );
-  }
+  const comparePaths = status === "LETTERS" || status === "VALUATION";
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -401,7 +396,15 @@ export function PropertySnapshot({
     setError("");
     const form = new FormData(e.currentTarget);
     const payload: Record<string, unknown> = {};
-    if (status === "VALUATION") payload.estimatedValue = parseDollars(form.get("estimatedValue"));
+    if (comparePaths) {
+      payload.cashOfferRange = String(form.get("cashOfferRange") || "").trim() || null;
+      payload.cashNet = parseDollars(form.get("cashNet"));
+      payload.cashNotes = String(form.get("cashNotes") || "").trim() || null;
+      payload.estimatedValue = parseDollars(form.get("estimatedValue"));
+      payload.prepCosts = parseDollars(form.get("prepCosts"));
+      payload.marketNet = parseDollars(form.get("marketNet"));
+      payload.marketNotes = String(form.get("marketNotes") || "").trim() || null;
+    }
     if (status === "LISTED") {
       payload.listPrice = parseDollars(form.get("listPrice"));
       payload.listingNotes = String(form.get("listingNotes") || "").trim() || null;
@@ -443,17 +446,84 @@ export function PropertySnapshot({
       </div>
       {editing ? (
         <form onSubmit={onSubmit} className="space-y-3">
-          {status === "VALUATION" && (
-            <label className="block text-sm">
-              Estimated / appraised value
-              <input
-                name="estimatedValue"
-                defaultValue={snapshot.estimatedValue ?? ""}
-                inputMode="numeric"
-                placeholder="325000"
-                className="mt-1 w-full rounded-xl border border-line px-3 py-2"
-              />
-            </label>
+          {comparePaths && (
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-2 rounded-xl border border-line p-3">
+                <p className="text-sm font-semibold text-forest">Cash path</p>
+                <label className="block text-sm">
+                  Cash offer range
+                  <input
+                    name="cashOfferRange"
+                    defaultValue={snapshot.cashOfferRange ?? ""}
+                    placeholder="Available within 48 hours"
+                    className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                  />
+                </label>
+                <label className="block text-sm">
+                  Estimated net to estate
+                  <input
+                    name="cashNet"
+                    defaultValue={snapshot.cashNet ?? ""}
+                    inputMode="numeric"
+                    placeholder="290000"
+                    className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                  />
+                </label>
+                <label className="block text-sm">
+                  Speed & certainty note
+                  <textarea
+                    name="cashNotes"
+                    defaultValue={snapshot.cashNotes ?? ""}
+                    rows={2}
+                    placeholder="Faster close, fewer surprises — usually a lower number than listing."
+                    className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                  />
+                </label>
+              </div>
+              <div className="space-y-2 rounded-xl border border-line p-3">
+                <p className="text-sm font-semibold text-forest">Market path</p>
+                <label className="block text-sm">
+                  Recommended list / CMA
+                  <input
+                    name="estimatedValue"
+                    defaultValue={snapshot.estimatedValue ?? ""}
+                    inputMode="numeric"
+                    placeholder="349000"
+                    className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                  />
+                </label>
+                <label className="block text-sm">
+                  Rough prep costs
+                  <input
+                    name="prepCosts"
+                    defaultValue={snapshot.prepCosts ?? ""}
+                    inputMode="numeric"
+                    placeholder="8500"
+                    className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                  />
+                </label>
+                <label className="block text-sm">
+                  Estimated net after costs & time
+                  <input
+                    name="marketNet"
+                    defaultValue={snapshot.marketNet ?? ""}
+                    inputMode="numeric"
+                    placeholder="318000"
+                    className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                  />
+                </label>
+                <label className="block text-sm">
+                  CMA note
+                  <textarea
+                    name="marketNotes"
+                    defaultValue={snapshot.marketNotes ?? ""}
+                    rows={2}
+                    placeholder="We typically use a professional CMA unless an appraisal is required or preferred."
+                    className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                  />
+                </label>
+              </div>
+            </div>
           )}
           {status === "LISTED" && (
             <>
@@ -552,13 +622,45 @@ export function PropertySnapshot({
           </div>
         </form>
       ) : (
-        <dl className="space-y-1 text-sm">
-          {status === "VALUATION" && (
-            <div className="flex justify-between gap-4">
-              <dt className="text-muted">Estimated / appraised value</dt>
-              <dd className="font-semibold text-forest">{formatDollars(snapshot.estimatedValue)}</dd>
-            </div>
+        <div>
+          {comparePaths && (
+            <>
+              <p className="mb-3 text-sm text-muted">
+                Two ways to sell. Estimates only — not a full net sheet, and still subject to court
+                approval.
+              </p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-line bg-warm-white p-3 text-sm">
+                  <p className="font-semibold text-forest">Cash path</p>
+                  <p className="mt-2 text-muted">Offer</p>
+                  <p className="font-semibold text-forest">
+                    {snapshot.cashOfferRange || "Cash offers available within 48 hours"}
+                  </p>
+                  <p className="mt-2 text-muted">Estimated net to estate</p>
+                  <p className="font-semibold text-forest">{formatDollars(snapshot.cashNet)}</p>
+                  <p className="mt-2 text-muted">
+                    {snapshot.cashNotes ||
+                      "Speed and certainty: as-is, fewer moving parts, often a lower number than listing."}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-line bg-warm-white p-3 text-sm">
+                  <p className="font-semibold text-forest">Market path</p>
+                  <p className="mt-2 text-muted">Recommended list / CMA</p>
+                  <p className="font-semibold text-forest">{formatDollars(snapshot.estimatedValue)}</p>
+                  <p className="mt-2 text-muted">Rough prep costs</p>
+                  <p className="font-semibold text-forest">{formatDollars(snapshot.prepCosts)}</p>
+                  <p className="mt-2 text-muted">Estimated net after costs & time</p>
+                  <p className="font-semibold text-forest">{formatDollars(snapshot.marketNet)}</p>
+                  <p className="mt-2 text-muted">
+                    {snapshot.marketNotes ||
+                      "We typically use a professional CMA unless an appraisal is required or preferred by the family."}
+                  </p>
+                </div>
+              </div>
+            </>
           )}
+          {!comparePaths && (
+          <dl className="space-y-1 text-sm">
           {status === "LISTED" && (
             <>
               <div className="flex justify-between gap-4">
@@ -596,6 +698,8 @@ export function PropertySnapshot({
             </>
           )}
         </dl>
+          )}
+        </div>
       )}
     </div>
   );

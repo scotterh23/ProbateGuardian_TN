@@ -81,6 +81,12 @@ model Estate {
   salePrice          Int?
   netToEstate        Int?
   netNotes           String?
+  cashOfferRange     String?
+  cashNet            Int?
+  cashNotes          String?
+  prepCosts          Int?
+  marketNet          Int?
+  marketNotes        String?
   createdAt DateTime       @default(now())
   updatedAt DateTime     @updatedAt
 

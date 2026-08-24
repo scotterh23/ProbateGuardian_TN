@@ -9,7 +9,7 @@ const ITEMS: { term: string; body: string }[] = [
   },
   {
     term: "Creditor Period",
-    body: "After a notice is published, Tennessee law gives people a window to make claims against the estate. Closing a house sale before this window ends can still happen, but it is often riskier. The safer window is after the creditor period has ended, always subject to court approval.",
+    body: "In Tennessee, notice to creditors is generally published once a week for two consecutive weeks. Creditors then generally have four months from the first publication to make claims. A house can still sell before that window ends, but it is often riskier. The safer window to close is after the four months, always subject to court approval. This is not legal advice — your attorney confirms the dates for this estate.",
   },
   {
     term: "Final Accounting",

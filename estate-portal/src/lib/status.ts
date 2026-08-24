@@ -42,9 +42,9 @@ export const PROGRESS_HELP: Record<EstateProgress, string> = {
   INVENTORY_FILED:
     "A list of what the estate owns has been prepared and filed — bank accounts, the house, vehicles, and other assets.",
   NOTICE_TO_CREDITORS:
-    "A public notice tells people who are owed money that the estate is open, so they have a chance to come forward.",
+    "In Tennessee, notice to creditors is generally published once a week for two consecutive weeks. That starts the clock for people who may be owed money.",
   CREDITOR_PERIOD_ENDED:
-    "The waiting window for claims has run. This is the much safer window to close a house sale — still subject to court approval, not a guarantee.",
+    "Creditors generally have four months from the first publication to make claims. After that window, closing a house sale is usually much safer — still subject to court approval, not a guarantee.",
   DEBTS_TAXES_SETTLED:
     "Known bills, taxes, and valid claims are being paid from estate funds so the rest can go to heirs.",
   FINAL_ACCOUNTING:

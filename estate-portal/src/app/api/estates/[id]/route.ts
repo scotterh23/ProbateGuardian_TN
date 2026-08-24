@@ -32,6 +32,12 @@ const patchSchema = z.object({
   salePrice: z.number().int().nonnegative().nullable().optional(),
   netToEstate: z.number().int().nonnegative().nullable().optional(),
   netNotes: z.string().max(500).nullable().optional(),
+  cashOfferRange: z.string().max(120).nullable().optional(),
+  cashNet: z.number().int().nonnegative().nullable().optional(),
+  cashNotes: z.string().max(500).nullable().optional(),
+  prepCosts: z.number().int().nonnegative().nullable().optional(),
+  marketNet: z.number().int().nonnegative().nullable().optional(),
+  marketNotes: z.string().max(500).nullable().optional(),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -87,6 +93,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     salePrice,
     netToEstate,
     netNotes,
+    cashOfferRange,
+    cashNet,
+    cashNotes,
+    prepCosts,
+    marketNet,
+    marketNotes,
     ...adminRest
   } = parsed.data;
   const adminFields = Object.fromEntries(
@@ -102,6 +114,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       salePrice,
       netToEstate,
       netNotes,
+      cashOfferRange,
+      cashNet,
+      cashNotes,
+      prepCosts,
+      marketNet,
+      marketNotes,
     }).filter(([, value]) => value !== undefined),
   );
   if (Object.keys(adminFields).length > 0 && session.role !== "ADMIN") {

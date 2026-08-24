@@ -128,6 +128,12 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
               salePrice: estate.salePrice,
               netToEstate: estate.netToEstate,
               netNotes: estate.netNotes,
+              cashOfferRange: estate.cashOfferRange,
+              cashNet: estate.cashNet,
+              cashNotes: estate.cashNotes,
+              prepCosts: estate.prepCosts,
+              marketNet: estate.marketNet,
+              marketNotes: estate.marketNotes,
             }}
           />
         </section>
