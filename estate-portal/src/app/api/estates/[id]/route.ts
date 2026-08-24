@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { canUpdateProgress, getEstateAccess, getSession } from "@/lib/auth";
+import { canUpdateProgress, canUpdateSnapshot, getEstateAccess, getSession } from "@/lib/auth";
 import { removeUpload } from "@/lib/files";
 
 const patchSchema = z.object({
@@ -21,6 +21,17 @@ const patchSchema = z.object({
       "ESTATE_CLOSED",
     ])
     .optional(),
+  estimatedValue: z.number().int().nonnegative().nullable().optional(),
+  listPrice: z.number().int().nonnegative().nullable().optional(),
+  listingNotes: z.string().max(500).nullable().optional(),
+  contractPrice: z.number().int().nonnegative().nullable().optional(),
+  transactionStatus: z
+    .enum(["INSPECTION", "APPRAISAL", "FINANCING", "CLEAR_TO_CLOSE"])
+    .nullable()
+    .optional(),
+  salePrice: z.number().int().nonnegative().nullable().optional(),
+  netToEstate: z.number().int().nonnegative().nullable().optional(),
+  netNotes: z.string().max(500).nullable().optional(),
 });
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -66,19 +77,49 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid estate update." }, { status: 400 });
   }
-  const { progress, ...rest } = parsed.data;
-  const otherFields = Object.fromEntries(
-    Object.entries(rest).filter(([, value]) => value !== undefined),
+  const {
+    progress,
+    estimatedValue,
+    listPrice,
+    listingNotes,
+    contractPrice,
+    transactionStatus,
+    salePrice,
+    netToEstate,
+    netNotes,
+    ...adminRest
+  } = parsed.data;
+  const adminFields = Object.fromEntries(
+    Object.entries(adminRest).filter(([, value]) => value !== undefined),
   );
-  if (Object.keys(otherFields).length > 0 && session.role !== "ADMIN") {
+  const snapshotFields = Object.fromEntries(
+    Object.entries({
+      estimatedValue,
+      listPrice,
+      listingNotes,
+      contractPrice,
+      transactionStatus,
+      salePrice,
+      netToEstate,
+      netNotes,
+    }).filter(([, value]) => value !== undefined),
+  );
+  if (Object.keys(adminFields).length > 0 && session.role !== "ADMIN") {
     return NextResponse.json({ error: "Admin only." }, { status: 403 });
   }
   if (progress && !canUpdateProgress(access.role)) {
     return NextResponse.json({ error: "Only the executor and Probate Guardians can update estate progress." }, { status: 403 });
   }
+  if (Object.keys(snapshotFields).length > 0 && !canUpdateSnapshot(access.role)) {
+    return NextResponse.json({ error: "Only the executor and Probate Guardians can update the property snapshot." }, { status: 403 });
+  }
   const estate = await prisma.estate.update({
     where: { id },
-    data: { ...otherFields, ...(progress ? { progress } : {}) },
+    data: {
+      ...adminFields,
+      ...snapshotFields,
+      ...(progress ? { progress } : {}),
+    },
   });
   return NextResponse.json({ estate });
 }

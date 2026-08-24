@@ -1,4 +1,4 @@
-import { EstateProgress, EstateStatus, UserRole } from "@prisma/client";
+import { EstateProgress, EstateStatus, TransactionStatus, UserRole } from "@prisma/client";
 
 export const STATUS_ORDER: EstateStatus[] = [
   "LETTERS",
@@ -52,6 +52,25 @@ export const PROGRESS_HELP: Record<EstateProgress, string> = {
   ESTATE_CLOSED:
     "The court has ended the probate case. Remaining assets, if any, can be distributed per the will or Tennessee law.",
 };
+
+export const TX_STATUS_LABEL: Record<TransactionStatus, string> = {
+  INSPECTION: "Inspection",
+  APPRAISAL: "Appraisal",
+  FINANCING: "Financing",
+  CLEAR_TO_CLOSE: "Clear to close",
+};
+
+export const TX_STATUS_ORDER: TransactionStatus[] = [
+  "INSPECTION",
+  "APPRAISAL",
+  "FINANCING",
+  "CLEAR_TO_CLOSE",
+];
+
+export function formatDollars(value: number | null | undefined) {
+  if (value == null) return "—";
+  return value.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
 
 export const ROLE_LABEL: Record<UserRole, string> = {
   ADMIN: "Probate Guardians",

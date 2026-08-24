@@ -23,6 +23,13 @@ enum EstateStatus {
   CLOSED
 }
 
+enum TransactionStatus {
+  INSPECTION
+  APPRAISAL
+  FINANCING
+  CLEAR_TO_CLOSE
+}
+
 enum EstateProgress {
   LETTERS_ISSUED
   INVENTORY_FILED
@@ -66,6 +73,14 @@ model Estate {
   county    String
   status    EstateStatus   @default(LETTERS)
   progress  EstateProgress @default(LETTERS_ISSUED)
+  estimatedValue     Int?
+  listPrice          Int?
+  listingNotes       String?
+  contractPrice      Int?
+  transactionStatus  TransactionStatus?
+  salePrice          Int?
+  netToEstate        Int?
+  netNotes           String?
   createdAt DateTime       @default(now())
   updatedAt DateTime     @updatedAt
 

@@ -6,6 +6,7 @@ import {
   canManageEstate,
   canPostUpdate,
   canUpdateProgress,
+  canUpdateSnapshot,
   canUploadDocs,
   canViewAllQuestions,
   getEstateAccess,
@@ -19,12 +20,13 @@ import { ProgressTrack } from "@/components/ProgressTrack";
 import { EstateGlossary } from "@/components/EstateGlossary";
 import { ROLE_LABEL } from "@/lib/status";
 import {
-  DeleteEstateForm,
   DocumentList,
   DocumentUpload,
+  EstateAdminMenu,
   InviteForm,
   PostUpdateForm,
   ProgressEditor,
+  PropertySnapshot,
   QuestionForm,
   QuestionList,
   StatusEditor,
@@ -92,7 +94,12 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
               {estate.address}, {estate.city}
             </p>
           </div>
-          <StatusBadge status={estate.status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={estate.status} />
+            {canManageEstate(role) && (
+              <EstateAdminMenu estateId={estate.id} nickname={estate.nickname} />
+            )}
+          </div>
         </div>
       </div>
 
@@ -108,6 +115,21 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
               <StatusEditor estateId={estate.id} status={estate.status} />
             </div>
           )}
+          <PropertySnapshot
+            estateId={estate.id}
+            status={estate.status}
+            canEdit={canUpdateSnapshot(role)}
+            snapshot={{
+              estimatedValue: estate.estimatedValue,
+              listPrice: estate.listPrice,
+              listingNotes: estate.listingNotes,
+              contractPrice: estate.contractPrice,
+              transactionStatus: estate.transactionStatus,
+              salePrice: estate.salePrice,
+              netToEstate: estate.netToEstate,
+              netNotes: estate.netNotes,
+            }}
+          />
         </section>
         <section className="card p-5">
           <h2 className="font-serif text-xl">Overall estate progress</h2>
@@ -122,10 +144,6 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
             </div>
           )}
         </section>
-      </div>
-
-      <div className="mb-6">
-        <EstateGlossary />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
@@ -210,15 +228,11 @@ export default async function EstatePage({ params }: { params: Promise<{ id: str
             />
           </section>
 
-          {canManageEstate(role) && (
-            <section className="card border-red-200 p-5">
-              <h2 className="font-serif text-xl text-red-900">Delete this estate</h2>
-              <div className="mt-4">
-                <DeleteEstateForm estateId={estate.id} nickname={estate.nickname} />
-              </div>
-            </section>
-          )}
         </div>
+      </div>
+
+      <div className="mt-6">
+        <EstateGlossary />
       </div>
     </Shell>
   );

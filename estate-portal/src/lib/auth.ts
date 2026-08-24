@@ -127,6 +127,10 @@ export function canUpdateProgress(role: UserRole) {
   return role === "ADMIN" || role === "EXECUTOR";
 }
 
+export function canUpdateSnapshot(role: UserRole) {
+  return role === "ADMIN" || role === "EXECUTOR";
+}
+
 export function canComment(role: UserRole) {
   return role === "ADMIN" || role === "EXECUTOR" || role === "ATTORNEY";
 }

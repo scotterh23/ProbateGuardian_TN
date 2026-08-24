@@ -2,8 +2,16 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { EstateProgress, EstateStatus, UserRole } from "@prisma/client";
-import { DOC_LABEL, PROGRESS_LABEL, ROLE_LABEL, STATUS_LABEL } from "@/lib/status";
+import { EstateProgress, EstateStatus, TransactionStatus, UserRole } from "@prisma/client";
+import {
+  DOC_LABEL,
+  formatDollars,
+  PROGRESS_LABEL,
+  ROLE_LABEL,
+  STATUS_LABEL,
+  TX_STATUS_LABEL,
+  TX_STATUS_ORDER,
+} from "@/lib/status";
 
 type Comment = {
   id: string;
@@ -338,6 +346,309 @@ export function ProgressEditor({
         ))}
       </select>
     </label>
+  );
+}
+
+type Snapshot = {
+  estimatedValue: number | null;
+  listPrice: number | null;
+  listingNotes: string | null;
+  contractPrice: number | null;
+  transactionStatus: TransactionStatus | null;
+  salePrice: number | null;
+  netToEstate: number | null;
+  netNotes: string | null;
+};
+
+function parseDollars(raw: FormDataEntryValue | null) {
+  const text = String(raw || "").replace(/[$,\s]/g, "");
+  if (!text) return null;
+  const n = Number(text);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n) : null;
+}
+
+export function PropertySnapshot({
+  estateId,
+  status,
+  snapshot,
+  canEdit,
+}: {
+  estateId: string;
+  status: EstateStatus;
+  snapshot: Snapshot;
+  canEdit: boolean;
+}) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState("");
+
+  if (status === "LETTERS") {
+    return (
+      <div className="mt-5 border-t border-line pt-4">
+        <h3 className="text-sm font-semibold text-forest">Property snapshot</h3>
+        <p className="mt-1 text-sm text-muted">
+          After Letters, the house can typically be listed. Add a value here when valuation is
+          underway.
+        </p>
+      </div>
+    );
+  }
+
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setPending(true);
+    setError("");
+    const form = new FormData(e.currentTarget);
+    const payload: Record<string, unknown> = {};
+    if (status === "VALUATION") payload.estimatedValue = parseDollars(form.get("estimatedValue"));
+    if (status === "LISTED") {
+      payload.listPrice = parseDollars(form.get("listPrice"));
+      payload.listingNotes = String(form.get("listingNotes") || "").trim() || null;
+    }
+    if (status === "UNDER_CONTRACT") {
+      payload.contractPrice = parseDollars(form.get("contractPrice"));
+      payload.transactionStatus = String(form.get("transactionStatus") || "") || null;
+    }
+    if (status === "CLOSED") {
+      payload.salePrice = parseDollars(form.get("salePrice"));
+      payload.netToEstate = parseDollars(form.get("netToEstate"));
+      payload.netNotes = String(form.get("netNotes") || "").trim() || null;
+    }
+    const res = await fetch(`/api/estates/${estateId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    setPending(false);
+    if (!res.ok) {
+      setError(data.error || "Could not save the snapshot.");
+      return;
+    }
+    setEditing(false);
+    router.refresh();
+  }
+
+  return (
+    <div className="mt-5 border-t border-line pt-4">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold text-forest">Property snapshot</h3>
+        {canEdit && !editing && (
+          <button type="button" className="text-sm font-semibold text-accent hover:underline" onClick={() => setEditing(true)}>
+            Edit
+          </button>
+        )}
+      </div>
+      {editing ? (
+        <form onSubmit={onSubmit} className="space-y-3">
+          {status === "VALUATION" && (
+            <label className="block text-sm">
+              Estimated / appraised value
+              <input
+                name="estimatedValue"
+                defaultValue={snapshot.estimatedValue ?? ""}
+                inputMode="numeric"
+                placeholder="325000"
+                className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+              />
+            </label>
+          )}
+          {status === "LISTED" && (
+            <>
+              <label className="block text-sm">
+                List price
+                <input
+                  name="listPrice"
+                  defaultValue={snapshot.listPrice ?? ""}
+                  inputMode="numeric"
+                  placeholder="349000"
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                Listing notes
+                <textarea
+                  name="listingNotes"
+                  defaultValue={snapshot.listingNotes ?? ""}
+                  rows={2}
+                  placeholder="As-is, lockbox on, showing instructions…"
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+            </>
+          )}
+          {status === "UNDER_CONTRACT" && (
+            <>
+              <label className="block text-sm">
+                Contract price
+                <input
+                  name="contractPrice"
+                  defaultValue={snapshot.contractPrice ?? ""}
+                  inputMode="numeric"
+                  placeholder="340000"
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                Transaction status
+                <select
+                  name="transactionStatus"
+                  defaultValue={snapshot.transactionStatus ?? "INSPECTION"}
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                >
+                  {TX_STATUS_ORDER.map((value) => (
+                    <option key={value} value={value}>
+                      {TX_STATUS_LABEL[value]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+          {status === "CLOSED" && (
+            <>
+              <label className="block text-sm">
+                Final sale price
+                <input
+                  name="salePrice"
+                  defaultValue={snapshot.salePrice ?? ""}
+                  inputMode="numeric"
+                  placeholder="340000"
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                Net to estate
+                <input
+                  name="netToEstate"
+                  defaultValue={snapshot.netToEstate ?? ""}
+                  inputMode="numeric"
+                  placeholder="312000"
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+              <label className="block text-sm">
+                Net notes
+                <textarea
+                  name="netNotes"
+                  defaultValue={snapshot.netNotes ?? ""}
+                  rows={2}
+                  placeholder="After costs, commissions, and typical closing items. Not a full net sheet."
+                  className="mt-1 w-full rounded-xl border border-line px-3 py-2"
+                />
+              </label>
+            </>
+          )}
+          {error && <p className="text-sm text-red-700">{error}</p>}
+          <div className="flex gap-2">
+            <button className="rounded-xl bg-forest px-3 py-2 text-sm font-semibold text-white" disabled={pending}>
+              {pending ? "Saving…" : "Save"}
+            </button>
+            <button type="button" className="rounded-xl border border-line px-3 py-2 text-sm font-semibold" onClick={() => setEditing(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      ) : (
+        <dl className="space-y-1 text-sm">
+          {status === "VALUATION" && (
+            <div className="flex justify-between gap-4">
+              <dt className="text-muted">Estimated / appraised value</dt>
+              <dd className="font-semibold text-forest">{formatDollars(snapshot.estimatedValue)}</dd>
+            </div>
+          )}
+          {status === "LISTED" && (
+            <>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">List price</dt>
+                <dd className="font-semibold text-forest">{formatDollars(snapshot.listPrice)}</dd>
+              </div>
+              {snapshot.listingNotes ? <dd className="text-muted">{snapshot.listingNotes}</dd> : <dd className="text-muted">No listing notes yet.</dd>}
+            </>
+          )}
+          {status === "UNDER_CONTRACT" && (
+            <>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Contract price</dt>
+                <dd className="font-semibold text-forest">{formatDollars(snapshot.contractPrice)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Transaction status</dt>
+                <dd className="font-semibold text-forest">
+                  {snapshot.transactionStatus ? TX_STATUS_LABEL[snapshot.transactionStatus] : "—"}
+                </dd>
+              </div>
+            </>
+          )}
+          {status === "CLOSED" && (
+            <>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Final sale price</dt>
+                <dd className="font-semibold text-forest">{formatDollars(snapshot.salePrice)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted">Net to estate</dt>
+                <dd className="font-semibold text-forest">{formatDollars(snapshot.netToEstate)}</dd>
+              </div>
+              {snapshot.netNotes ? <dd className="text-muted">{snapshot.netNotes}</dd> : null}
+            </>
+          )}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+export function EstateAdminMenu({
+  estateId,
+  nickname,
+}: {
+  estateId: string;
+  nickname: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+
+  return (
+    <div className="relative">
+      <button
+        type="button"
+        className="rounded-lg px-2 py-1 text-lg leading-none text-muted hover:bg-mist"
+        aria-label="Estate settings"
+        onClick={() => setOpen((v) => !v)}
+      >
+        ⋯
+      </button>
+      {open && !confirmOpen && (
+        <div className="absolute right-0 z-10 mt-1 w-48 rounded-xl border border-line bg-white p-1 shadow-md">
+          <button
+            type="button"
+            className="w-full rounded-lg px-3 py-2 text-left text-sm text-red-800 hover:bg-mist"
+            onClick={() => {
+              setOpen(false);
+              setConfirmOpen(true);
+            }}
+          >
+            Delete estate…
+          </button>
+        </div>
+      )}
+      {confirmOpen && (
+        <div className="absolute right-0 z-10 mt-1 w-72 rounded-xl border border-line bg-white p-4 shadow-md">
+          <p className="mb-3 text-sm font-semibold text-forest">Delete this estate?</p>
+          <DeleteEstateForm estateId={estateId} nickname={nickname} />
+          <button
+            type="button"
+            className="mt-2 text-sm text-muted hover:underline"
+            onClick={() => setConfirmOpen(false)}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
