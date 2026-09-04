@@ -222,7 +222,13 @@ export function PromoteSafeButton({ count }: { count: number }) {
           <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
             <h2 className="text-lg font-semibold">Move New leads with a logged call to Contacted?</h2>
             <p className="mt-2 text-sm text-muted">
-              This only changes leads that are still <strong>New</strong> and already have at least one logged call. It will not touch Warm, Hot, Follow-up, DNC, or Needs Mailer.
+              This only changes leads that are still <strong>New</strong> and already have at least one logged call
+              activity. It will not touch Warm, Hot, Follow-up, DNC, or Needs Mailer. Leads that are New with no
+              logged call stay New.
+            </p>
+            <p className="mt-2 text-sm text-muted">
+              Right now that is {count} lead{count === 1 ? "" : "s"}. Confirm only if Shelly wants those statuses
+              updated.
             </p>
             {error ? <p className="mt-2 text-sm text-red-600">{error}</p> : null}
             <div className="mt-4 flex justify-end gap-2">
