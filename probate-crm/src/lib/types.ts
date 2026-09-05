@@ -70,6 +70,22 @@ export type Lead = {
   lead_activities?: LeadActivity[];
 };
 
+export type Attorney = {
+  id: string;
+  full_name: string | null;
+  normalized_name: string | null;
+  firm: string | null;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  county: string | null;
+  status: string | null;
+  notes: string | null;
+  last_contacted_at: string | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
 export type Profile = {
   id: string;
   email: string | null;

@@ -14,6 +14,12 @@ This folder is the shippable app. The original `probate-crm-pro` source is not i
 6. **Multi-signal outreach** — call / email / mailer counts and last dates sit next to status. Status is not reused for mailer or email.
 7. **Safe batch only** — “Move N New leads with a logged call to Contacted.” Requires `status = new` **and** at least one `lead_activities` row typed `call`. It will not touch Warm, Hot, Follow-up, DNC, or Needs Mailer. The live production button that said “New leads with contact” (phone on file) is **parked** as unsafe.
 
+## Attorney contacts
+
+`/attorneys` lists firm / email / phone. `/attorneys/[id]` saves those fields (plus county and address — the columns that already exist). Empty form fields are left unchanged; **Clear** is the only way to blank a value.
+
+`/attorneys/import` accepts CSV keyed on `attorney_id` (UUID). Preview, then commit. Only non-empty incoming cells overwrite. Unknown ids are skipped. No attorney rows are created. Leads are never written.
+
 ## Parked (do not dump on Branton)
 
 - Send-from-CRM email compose, drip enrollment, paste import, case create, partner/agent admin, and org settings from the current production app.
