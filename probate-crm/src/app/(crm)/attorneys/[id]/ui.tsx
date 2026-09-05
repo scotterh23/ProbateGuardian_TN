@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { updateAttorneyContact } from "@/app/(crm)/attorneys/actions";
+import { updateAttorneyContact, updateAttorneyContactForm } from "@/app/(crm)/attorneys/actions";
 import { ATTORNEY_CONTACT_FIELDS, type AttorneyContactField } from "@/lib/attorney-contact";
 import type { Attorney } from "@/lib/types";
 
@@ -23,6 +23,7 @@ export function AttorneyContactForm({ attorney }: { attorney: Attorney }) {
   return (
     <form
       className="space-y-4 rounded-xl border border-line bg-white p-5"
+      action={updateAttorneyContactForm.bind(null, attorney.id)}
       onSubmit={(event) => {
         event.preventDefault();
         const form = new FormData(event.currentTarget);

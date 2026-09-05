@@ -60,6 +60,16 @@ export async function updateAttorneyContact(
   return updateAttorneyRow(attorneyId, patch);
 }
 
+export async function updateAttorneyContactForm(attorneyId: string, formData: FormData) {
+  const incoming: Partial<Record<AttorneyContactField, string>> = {};
+  const clear: Partial<Record<AttorneyContactField, boolean>> = {};
+  for (const field of ATTORNEY_CONTACT_FIELDS) {
+    incoming[field] = String(formData.get(field) || "");
+    clear[field] = formData.get(`clear_${field}`) === "on";
+  }
+  await updateAttorneyContact(attorneyId, incoming, clear);
+}
+
 export async function previewAttorneyContactImport(csvText: string) {
   await requireUser();
   const parsed = parseAttorneyContactCsv(csvText);
